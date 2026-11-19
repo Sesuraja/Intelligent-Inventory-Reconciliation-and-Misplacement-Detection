@@ -1,6 +1,8 @@
+import os
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, Base, engine
+from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.user import User, Role
 from app.models.location import Warehouse, Zone, Shelf, Bin
@@ -13,9 +15,29 @@ from app.models.ai_model import AIPrediction, AIModel, ModelTrainingRun
 from app.models.audit import AuditLog
 from app.rfid.reader_manager import reader_manager
 
+def _migrate_schema():
+    from sqlalchemy import text
+    try:
+        with engine.begin() as conn:
+            if settings.DATABASE_URL.startswith("sqlite"):
+                # Ensure rfid_events.source column exists
+                res = conn.execute(text("PRAGMA table_info(rfid_events)")).fetchall()
+                col_names = [r[1] for r in res]
+                if col_names and "source" not in col_names:
+                    conn.execute(text("ALTER TABLE rfid_events ADD COLUMN source VARCHAR(20) DEFAULT 'SIMULATION'"))
+
+                # Ensure observation_windows.source column exists
+                res2 = conn.execute(text("PRAGMA table_info(observation_windows)")).fetchall()
+                col_names2 = [r[1] for r in res2]
+                if col_names2 and "source" not in col_names2:
+                    conn.execute(text("ALTER TABLE observation_windows ADD COLUMN source VARCHAR(20) DEFAULT 'SIMULATION'"))
+    except Exception as e:
+        print(f"Schema migration notice: {e}")
+
 def seed_database():
     """Initializes tables and populates realistic seed data for the warehouse system."""
     Base.metadata.create_all(bind=engine)
+    _migrate_schema()
     db: Session = SessionLocal()
 
     try:
@@ -39,17 +61,20 @@ def seed_database():
             db.add(r)
         db.flush()
 
+        admin_pass = os.getenv("SEED_ADMIN_PASSWORD", "admin123")
+        operator_pass = os.getenv("SEED_OPERATOR_PASSWORD", "operator123")
+
         admin_user = User(
             name="Sarah Jenkins",
             email="admin@warehouse.io",
-            password_hash=get_password_hash("admin123"),
+            password_hash=get_password_hash(admin_pass),
             role_id=roles["Admin"].id,
             created_at=now
         )
         operator_user = User(
             name="Alex Rivera",
             email="operator@warehouse.io",
-            password_hash=get_password_hash("operator123"),
+            password_hash=get_password_hash(operator_pass),
             role_id=roles["Operator"].id,
             created_at=now
         )

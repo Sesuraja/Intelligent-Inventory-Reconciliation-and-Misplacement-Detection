@@ -169,6 +169,7 @@ class UHFHardwareSimulator(AbstractReaderAdapter):
                         "rssi_dbm": round(noisy_rssi + random.gauss(0, 0.8), 1),
                         "frequency": random.choice(freq_channels),
                         "observed_at": now.isoformat(),
+                        "source": "SIMULATION"
                     })
 
         return observations

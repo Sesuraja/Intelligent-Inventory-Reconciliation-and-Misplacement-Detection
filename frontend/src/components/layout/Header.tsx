@@ -1,18 +1,17 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Menu,
-  Search,
   Sliders,
-  Radio,
-  Zap,
-  Bell,
-  RefreshCw,
   CheckCircle2,
   Building2,
-  UserCheck
+  RefreshCw,
+  Cpu,
+  Radio,
+  PowerOff
 } from 'lucide-react';
 import { NavigationTab } from '../../types';
 import { useAppSettings } from '../../context/SettingsContext';
+import { api } from '../../services/api';
 
 interface HeaderProps {
   currentTab: NavigationTab;
@@ -34,6 +33,34 @@ export const Header: React.FC<HeaderProps> = ({
   onRefresh
 }) => {
   const { settings } = useAppSettings();
+  const [operatingMode, setOperatingMode] = useState<string>('SIMULATION');
+  const [isSwitchingMode, setIsSwitchingMode] = useState(false);
+
+  useEffect(() => {
+    api.getOperatingMode()
+      .then((res) => {
+        if (res && res.mode) setOperatingMode(res.mode);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleToggleMode = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const modes = ['SIMULATION', 'PHYSICAL', 'OFFLINE'];
+    const nextIdx = (modes.indexOf(operatingMode) + 1) % modes.length;
+    const nextMode = modes[nextIdx];
+
+    setIsSwitchingMode(true);
+    try {
+      const res = await api.setOperatingMode(nextMode);
+      setOperatingMode(res.mode);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      console.error('Failed to change operating mode', err);
+    } finally {
+      setIsSwitchingMode(false);
+    }
+  };
 
   const getTabTitle = () => {
     switch (currentTab) {
@@ -53,6 +80,30 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const { title, desc } = getTabTitle();
+
+  const getModeBadge = () => {
+    if (operatingMode === 'PHYSICAL') {
+      return {
+        bg: 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100',
+        icon: <Radio className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />,
+        label: 'PHYSICAL (Hardware)'
+      };
+    } else if (operatingMode === 'OFFLINE') {
+      return {
+        bg: 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100',
+        icon: <PowerOff className="w-3.5 h-3.5 text-amber-600" />,
+        label: 'OFFLINE (Standby)'
+      };
+    } else {
+      return {
+        bg: 'bg-indigo-50 text-indigo-800 border-indigo-300 hover:bg-indigo-100',
+        icon: <Cpu className="w-3.5 h-3.5 text-indigo-600" />,
+        label: 'SIMULATION (Physics)'
+      };
+    }
+  };
+
+  const modeBadge = getModeBadge();
 
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-slate-200/90 shadow-xs">
@@ -77,13 +128,24 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Right: Telemetry Badges & Quick Action Controls */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2 sm:space-x-3">
           
+          {/* Operating Mode Selector Button */}
+          <button
+            onClick={handleToggleMode}
+            disabled={isSwitchingMode}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold cursor-pointer transition ${modeBadge.bg}`}
+            title="Click to cycle operating mode: SIMULATION -> PHYSICAL -> OFFLINE"
+          >
+            {modeBadge.icon}
+            <span className="font-mono text-[11px]">{modeBadge.label}</span>
+          </button>
+
           {/* Live WebSocket Status Pill */}
           <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-xs">
             <span className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
             <span className="font-semibold text-slate-700 font-mono text-[11px]">
-              {isLiveConnected ? 'LIVE TELEMETRY' : 'CONNECTING'}
+              {isLiveConnected ? 'LIVE STREAM' : 'OFFLINE'}
             </span>
           </div>
 
@@ -133,4 +195,3 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
-

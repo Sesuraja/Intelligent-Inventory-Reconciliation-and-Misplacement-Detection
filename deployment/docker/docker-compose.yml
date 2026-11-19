@@ -3,21 +3,22 @@ version: '3.8'
 services:
   # ============================================================================
   # Service 1: PostgreSQL 16 Enterprise Warehouse Database
+  # Protected: Bound strictly to localhost loopback (127.0.0.1)
   # ============================================================================
   db:
     image: postgres:16-alpine
     container_name: inventory_rfid_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-      POSTGRES_DB: inventory_rfid
+      POSTGRES_USER: ${POSTGRES_USER:-app_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_secure_db_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-inventory_rfid}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d inventory_rfid"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app_user} -d ${POSTGRES_DB:-inventory_rfid}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,7 +29,7 @@ services:
   # ============================================================================
   app:
     build:
-      context: .
+      context: ../..
       dockerfile: Dockerfile
     container_name: inventory_rfid_app
     restart: unless-stopped
@@ -36,9 +37,12 @@ services:
       db:
         condition: service_healthy
     environment:
-      # Connects to PostgreSQL container service using psycopg
-      DATABASE_URL: "postgresql+psycopg://postgres:postgrespassword@db:5432/inventory_rfid"
-      SECRET_KEY: "rfid-ai-secret-key-super-secure-jwt-warehouse-2026"
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-app_user}:${POSTGRES_PASSWORD:-change_me_secure_db_pass}@db:5432/${POSTGRES_DB:-inventory_rfid}"
+      JWT_SECRET: "${JWT_SECRET:-rfid-ai-secret-key-super-secure-jwt-warehouse-2026}"
+      SECRET_KEY: "${JWT_SECRET:-rfid-ai-secret-key-super-secure-jwt-warehouse-2026}"
+      OPERATING_MODE: "${OPERATING_MODE:-SIMULATION}"
+      RFID_READER_HOST: "${RFID_READER_HOST:-192.168.1.100}"
+      RFID_READER_PORT: "${RFID_READER_PORT:-5084}"
       HOST: "0.0.0.0"
       PORT: "8000"
     ports:
@@ -53,4 +57,3 @@ services:
 volumes:
   postgres_data:
     driver: local
-

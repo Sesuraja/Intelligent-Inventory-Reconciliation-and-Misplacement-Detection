@@ -45,15 +45,38 @@ def get_rfid_events(
 
 @router.get("/statistics")
 def get_rfid_event_statistics(db: Session = Depends(get_db)):
-    """Provides real-time event throughput and antenna observation statistics."""
+    """Provides dynamic, real-time event throughput and antenna observation statistics."""
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import func
+    from app.models.reader import Antenna
+    from app.rfid.operating_mode import mode_manager
+
+    now = datetime.now(timezone.utc)
     total_events = db.query(RFIDEvent).count()
-    events_last_hour = min(total_events, 420)
+    one_hour_ago = now - timedelta(hours=1)
+    events_last_hour = db.query(RFIDEvent).filter(RFIDEvent.observed_at >= one_hour_ago).count()
+    unique_epcs = db.query(func.distinct(RFIDEvent.epc)).count()
+
+    ten_sec_ago = now - timedelta(seconds=10)
+    recent_cnt = db.query(RFIDEvent).filter(RFIDEvent.observed_at >= ten_sec_ago).count()
+    read_rate = round(recent_cnt / 10.0, 1)
+
+    sim_events = db.query(RFIDEvent).filter(RFIDEvent.source == "SIMULATION").count()
+    phys_events = db.query(RFIDEvent).filter(RFIDEvent.source == "PHYSICAL").count()
+
+    active_ports = [a.port_number for a in db.query(Antenna).filter(Antenna.is_active == True).all()]
+    if not active_ports:
+        active_ports = [1, 2, 3, 4]
+
     return {
+        "operating_mode": mode_manager.current_mode.value,
         "total_events_captured": total_events,
-        "read_rate_per_sec": 14.2,
+        "events_simulation": sim_events,
+        "events_physical": phys_events,
+        "read_rate_per_sec": read_rate,
         "events_last_hour": events_last_hour,
-        "unique_epcs_seen": 15,
-        "active_antenna_ports": [1, 2, 3, 4]
+        "unique_epcs_seen": unique_epcs,
+        "active_antenna_ports": active_ports
     }
 
 @router.get("/{id}", response_model=RFIDEventResponse)

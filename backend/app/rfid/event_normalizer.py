@@ -15,6 +15,7 @@ class EventNormalizer:
       "frequency": 866.3,
       "observed_at": "2026-11-17T10:30:00Z",
       "received_at": "2026-11-17T10:30:00Z",
+      "source": "SIMULATION" | "PHYSICAL",
       "valid": true,
       "raw_payload": {...}
     }
@@ -26,7 +27,8 @@ class EventNormalizer:
         raw_event: Dict[str, Any],
         reader_code: str,
         antenna_id: int,
-        clock_offset_ms: float = 0.0
+        clock_offset_ms: float = 0.0,
+        source: str = "SIMULATION"
     ) -> Dict[str, Any]:
         event_id = raw_event.get("event_id") or f"EVT-{uuid.uuid4().hex[:8].upper()}"
         epc = str(raw_event.get("epc", "")).strip().upper()
@@ -49,6 +51,7 @@ class EventNormalizer:
             observed_at = datetime.now(timezone.utc)
 
         received_at = datetime.now(timezone.utc)
+        evt_source = raw_event.get("source") or source
 
         normalized = {
             "event_id": event_id,
@@ -59,6 +62,7 @@ class EventNormalizer:
             "frequency": frequency,
             "observed_at": observed_at,
             "received_at": received_at,
+            "source": evt_source,
             "raw_payload": raw_event
         }
 
@@ -67,4 +71,3 @@ class EventNormalizer:
         normalized["validation_message"] = validation_msg
 
         return normalized
-

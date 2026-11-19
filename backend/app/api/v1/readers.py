@@ -248,16 +248,28 @@ def get_reader_health(id: int, db: Session = Depends(get_db)):
     }
 
 @router.post("/readers/{id}/test-connection")
-def test_reader_connection(id: int, db: Session = Depends(get_db)):
+async def test_reader_connection(id: int, db: Session = Depends(get_db)):
     r = db.query(Reader).filter(Reader.id == id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Reader not found")
+
+    from app.rfid.operating_mode import mode_manager
+    probe = await reader_manager.test_physical_connection()
+
     return {
-        "success": True,
+        "success": probe.get("reachable", False),
         "reader_code": r.reader_code,
-        "status": "ONLINE",
-        "ping_ms": 1.8,
-        "message": f"Successfully connected to {r.name} at {r.ip_address}:{r.port} via {r.protocol}"
+        "operating_mode": mode_manager.current_mode.value,
+        "physical_reachable": probe.get("reachable", False),
+        "latency_ms": probe.get("latency_ms", 0.0),
+        "ip_address": r.ip_address,
+        "port": r.port,
+        "protocol": r.protocol,
+        "message": probe.get("message") if probe.get("reachable") else (
+            f"Physical reader {r.reader_code} at {r.ip_address}:{r.port} is unreachable over TCP. "
+            f"Active operating mode is {mode_manager.current_mode.value}."
+        ),
+        "error": probe.get("error")
     }
 
 @router.get("/antennas/{id}", response_model=AntennaResponse)

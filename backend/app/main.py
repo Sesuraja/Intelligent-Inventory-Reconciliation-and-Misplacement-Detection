@@ -73,14 +73,60 @@ app.include_router(simulator_router, prefix=v1)
 
 @app.get(f"{v1}/system/health")
 def system_health():
+    from app.rfid.operating_mode import mode_manager
+    from app.rfid.reader_manager import reader_manager
+    phys_connected = reader_manager.get_physical_adapter().is_connected
     return {
         "status": "HEALTHY",
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "database": "CONNECTED",
         "collector_active": event_collector.is_running,
-        "readers_online": 1
+        "operating_mode": mode_manager.current_mode.value,
+        "physical_reader_connected": phys_connected,
+        "readers_online": 1 if (mode_manager.current_mode.value == "SIMULATION" or phys_connected) else 0
     }
+
+@app.get(f"{v1}/system/mode")
+def get_operating_mode():
+    from app.rfid.operating_mode import mode_manager
+    return mode_manager.get_status()
+
+@app.post(f"{v1}/system/mode")
+async def set_operating_mode(payload: Dict[str, Any]):
+    from app.rfid.operating_mode import mode_manager, OperatingMode
+    from app.models.audit import SystemEvent
+    from app.core.database import SessionLocal
+    from datetime import datetime, timezone
+
+    new_mode_str = payload.get("mode", "").upper()
+    if new_mode_str not in ("SIMULATION", "PHYSICAL", "OFFLINE"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid mode. Must be 'SIMULATION', 'PHYSICAL', or 'OFFLINE'")
+
+    mode = mode_manager.set_mode(new_mode_str)
+
+    # Broadcast mode change to UI
+    await ws_manager.broadcast("system-status", {
+        "type": "OPERATING_MODE_CHANGED",
+        "mode": mode.value
+    })
+
+    # Log system event
+    db = SessionLocal()
+    try:
+        sys_evt = SystemEvent(
+            source="MODE_MANAGER",
+            event_type="OPERATING_MODE_CHANGED",
+            message=f"System telemetry mode changed to {mode.value}",
+            timestamp=datetime.now(timezone.utc)
+        )
+        db.add(sys_evt)
+        db.commit()
+    finally:
+        db.close()
+
+    return mode_manager.get_status()
 
 # System Configuration Store
 _system_settings = {

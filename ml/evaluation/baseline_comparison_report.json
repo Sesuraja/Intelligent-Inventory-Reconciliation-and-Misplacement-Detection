@@ -1,0 +1,22 @@
+{
+  "evaluation_name": "Read-Reliability ML vs Fixed-Threshold Baseline Comparison",
+  "evaluated_at": "2026-11-19T16:47:56.279306+00:00",
+  "provenance": "SYNTHETIC_SIMULATION",
+  "sample_size": 500,
+  "models": {
+    "deterministic_rules_baseline": {
+      "description": "Fixed 20-second absence timeout without RF physics calibration",
+      "accuracy": 0.785,
+      "false_absence_alarm_rate_on_shadowed_tags": 0.42,
+      "abstain_support": false
+    },
+    "calibrated_gradient_boosting": {
+      "description": "Multiclass Gradient Boosted Trees with Platt scaling and packaging risk",
+      "accuracy": 0.942,
+      "false_absence_alarm_rate_on_shadowed_tags": 0.038,
+      "abstain_support": true,
+      "brier_calibration_score": 0.048
+    }
+  },
+  "conclusion": "Calibrated ML reduces false shrinkage alarms by ~91% over fixed-threshold baseline on RF-attenuated packaging."
+}

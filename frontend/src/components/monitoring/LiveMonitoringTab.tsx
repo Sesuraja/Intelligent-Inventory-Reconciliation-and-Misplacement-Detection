@@ -41,6 +41,38 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
   const [showAssignAntennaModal, setShowAssignAntennaModal] = useState(false);
   const [selectedPortForAntenna, setSelectedPortForAntenna] = useState(1);
 
+  // Hardware Connection Probe State
+  const [hardwareProbe, setHardwareProbe] = useState<{
+    tested: boolean;
+    reachable: boolean;
+    latencyMs?: number;
+    message?: string;
+    operatingMode?: string;
+  } | null>(null);
+  const [probingHardware, setProbingHardware] = useState(false);
+
+  const handleTestPhysicalReader = async () => {
+    setProbingHardware(true);
+    try {
+      const res = await api.testReaderPhysicalConnection(readers[0]?.id || 1);
+      setHardwareProbe({
+        tested: true,
+        reachable: res.physical_reachable,
+        latencyMs: res.latency_ms,
+        message: res.message,
+        operatingMode: res.operating_mode
+      });
+    } catch (err: any) {
+      setHardwareProbe({
+        tested: true,
+        reachable: false,
+        message: err.message || 'Reader socket probe failed'
+      });
+    } finally {
+      setProbingHardware(false);
+    }
+  };
+
   useEffect(() => {
     api.getInventory().then((inv) => {
       setItems(inv);
@@ -123,6 +155,34 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
                 <span>Collector Buffer Loop:</span>
                 <span className="font-mono text-emerald-600">Active (2.0s sweep)</span>
               </div>
+            </div>
+
+            {/* Hardware Socket Probe Button */}
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <button
+                onClick={handleTestPhysicalReader}
+                disabled={probingHardware}
+                className="w-full py-1.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 transition"
+              >
+                <Wifi className="w-3.5 h-3.5 text-blue-600" />
+                <span>{probingHardware ? 'Probing TCP Socket...' : 'Probe Physical Reader (LLRP/TCP)'}</span>
+              </button>
+
+              {hardwareProbe && hardwareProbe.tested && (
+                <div className={`mt-2 p-2 rounded-lg text-[11px] border ${
+                  hardwareProbe.reachable
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                }`}>
+                  <div className="font-semibold flex items-center justify-between">
+                    <span>{hardwareProbe.reachable ? 'Physical Reader Reachable' : 'Hardware Offline (Unreachable)'}</span>
+                    {hardwareProbe.latencyMs !== undefined && (
+                      <span className="font-mono">{hardwareProbe.latencyMs}ms</span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-slate-600">{hardwareProbe.message}</div>
+                </div>
+              )}
             </div>
           </div>
 

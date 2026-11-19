@@ -26,14 +26,14 @@ from app.schemas.ai import (
 router = APIRouter(prefix="/ai", tags=["AI Intelligence Engine"])
 
 @router.get("/models")
-def get_ai_models():
+def get_ai_models(db: Session = Depends(get_db)):
     """Returns AI model registry metadata, versions, and validation metrics."""
-    return model_registry.get_all_models()
+    return model_registry.get_all_models(db=db)
 
 @router.post("/models/{id}/retrain")
-def retrain_ai_model(id: int):
+def retrain_ai_model(id: int, db: Session = Depends(get_db)):
     """Triggers retraining of AI models using verified ground-truth audit logs."""
-    return model_registry.trigger_retraining(id)
+    return model_registry.trigger_retraining(id, db=db)
 
 @router.post("/infer/read-reliability", response_model=ReadReliabilityOutput)
 def infer_read_reliability(input_data: ReadReliabilityInput):
@@ -81,12 +81,33 @@ def infer_root_cause(input_data: RootCauseInput):
 @router.post("/infer/location", response_model=LocationPredictionSchema)
 def infer_location(epc: str, expected_shelf: str, antenna_stats: Dict[int, Dict[str, Any]], db: Session = Depends(get_db)):
     """P0/P1 AI Model: Infers shelf location across multiple antenna observation windows."""
-    port_shelf_map = {1: "SHELF_A", 2: "SHELF_B", 3: "SHELF_C", 4: "SHELF_A"}
+    from app.models.reader import Antenna, AntennaCalibration
+    antennas = db.query(Antenna).all()
+    port_shelf_map = {
+        ant.port_number: (ant.shelf.shelf_code if ant.shelf else f"SHELF_{chr(64 + ant.port_number)}")
+        for ant in antennas
+    }
+    if not port_shelf_map:
+        port_shelf_map = {1: "SHELF_A", 2: "SHELF_B", 3: "SHELF_C", 4: "SHELF_D"}
+
+    calibs = db.query(AntennaCalibration).all()
+    ant_calibs = {
+        c.antenna.port_number: {
+            "median_rssi_baseline": c.median_rssi_baseline,
+            "noise_floor_dbm": c.noise_floor_dbm,
+            "cross_read_leakage_dbm": c.cross_read_leakage_dbm
+        }
+        for c in calibs if c.antenna
+    }
+    ant_health = {ant.port_number: ant.is_active for ant in antennas}
+
     loc_res = location_engine.infer_location(
         epc=epc,
         expected_shelf=expected_shelf,
         antenna_stats=antenna_stats,
-        port_shelf_map=port_shelf_map
+        port_shelf_map=port_shelf_map,
+        antenna_calibrations=ant_calibs,
+        antenna_health=ant_health
     )
     return LocationPredictionSchema(
         epc=epc,

@@ -32,12 +32,25 @@ class ReconciliationService:
         now = datetime.now(timezone.utc)
         
         # 1. Fetch readers & antennas mapping
+        from app.models.reader import AntennaCalibration
         antennas = db.query(Antenna).all()
         port_shelf_map = {}
         antenna_id_map = {}
+        ant_health = {}
         for ant in antennas:
             port_shelf_map[ant.port_number] = ant.shelf.shelf_code if ant.shelf else None
             antenna_id_map[ant.port_number] = ant.id
+            ant_health[ant.port_number] = ant.is_active
+
+        calibs = db.query(AntennaCalibration).all()
+        ant_calibs = {}
+        for c in calibs:
+            if c.antenna:
+                ant_calibs[c.antenna.port_number] = {
+                    "median_rssi_baseline": c.median_rssi_baseline,
+                    "noise_floor_dbm": c.noise_floor_dbm,
+                    "cross_read_leakage_dbm": c.cross_read_leakage_dbm
+                }
 
         reader = db.query(Reader).filter(Reader.reader_code == "READER_01").first()
         reader_online = (reader.status == "ONLINE") if reader else True
@@ -95,7 +108,9 @@ class ReconciliationService:
                 epc=epc,
                 expected_shelf=expected_shelf,
                 antenna_stats=ant_stats,
-                port_shelf_map=port_shelf_map
+                port_shelf_map=port_shelf_map,
+                antenna_calibrations=ant_calibs,
+                antenna_health=ant_health
             )
 
             # Run Feature extraction for Read-Reliability

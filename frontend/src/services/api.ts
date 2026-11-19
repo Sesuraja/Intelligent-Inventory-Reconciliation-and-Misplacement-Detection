@@ -120,6 +120,14 @@ export const api = {
       body: JSON.stringify({ action, epc, target_shelf, enabled })
     }),
 
+  // System Mode & Hardware Verification
+  getOperatingMode: () =>
+    fetchJSON<{ mode: string; is_simulation: boolean; is_physical: boolean; is_offline: boolean; description: string }>('/system/mode'),
+  setOperatingMode: (mode: string) =>
+    fetchJSON<any>('/system/mode', { method: 'POST', body: JSON.stringify({ mode }) }),
+  testReaderPhysicalConnection: (readerId: number = 1) =>
+    fetchJSON<any>(`/readers/${readerId}/test-connection`, { method: 'POST' }),
+
   // Auth & System Administration
   getUsers: () => fetchJSON<any[]>('/auth/users'),
   getMe: () => fetchJSON<any>('/auth/me'),

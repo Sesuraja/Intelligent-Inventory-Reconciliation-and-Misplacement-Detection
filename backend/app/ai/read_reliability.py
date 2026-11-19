@@ -243,20 +243,39 @@ class ReadReliabilityModel:
         if packaging_risk >= 0.5:
             evidence.append("Item packaging/contents (metal or liquid proximity) induces significant RF attenuation (-26 dB)")
 
-        # Run Calibrated ML model inference
-        x_vec = np.array([FeatureEngine.to_feature_vector(features)])
-        
-        if self.calibrated_model:
-            probs = self.calibrated_model.predict_proba(x_vec)[0]
-        else:
-            probs = self.base_model.predict_proba(x_vec)[0]
+        # Run Calibrated ML model inference with Deterministic Fallback
+        try:
+            x_vec = np.array([FeatureEngine.to_feature_vector(features)])
+            if self.calibrated_model:
+                probs = self.calibrated_model.predict_proba(x_vec)[0]
+            elif self.base_model:
+                probs = self.base_model.predict_proba(x_vec)[0]
+            else:
+                raise RuntimeError("No trained model available")
 
-        prob_dict = {
-            self.CLASSES[i]: round(float(probs[i]), 3) for i in range(len(self.CLASSES))
-        }
-        pred_idx = int(np.argmax(probs))
-        pred_status = self.CLASSES[pred_idx]
-        confidence = float(probs[pred_idx])
+            prob_dict = {
+                self.CLASSES[i]: round(float(probs[i]), 3) for i in range(len(self.CLASSES))
+            }
+            pred_idx = int(np.argmax(probs))
+            pred_status = self.CLASSES[pred_idx]
+            confidence = float(probs[pred_idx])
+            used_fallback = False
+        except Exception as e:
+            # Deterministic Fallback
+            used_fallback = True
+            base_dec = rules_baseline["decision"]
+            if base_dec == "CONFIDENT_MISSING":
+                pred_status = "LIKELY_ABSENT"
+            elif base_dec == "LIKELY_PRESENT":
+                pred_status = "LIKELY_PRESENT"
+            elif base_dec == "READER_OFFLINE_HOLD":
+                pred_status = "LIKELY_UNREAD"
+            else:
+                pred_status = "UNCERTAIN"
+            confidence = rules_baseline["rules_confidence"]
+            prob_dict = {c: 0.10 for c in self.CLASSES}
+            prob_dict[pred_status] = round(confidence, 2)
+            evidence.append(f"Deterministic rules fallback active: {rules_baseline['description']}")
 
         # RF Physics & Packaging override logic for boundary robustness
         if total_reads == 0:

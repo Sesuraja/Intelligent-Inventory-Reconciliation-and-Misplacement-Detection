@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from typing import Optional, Any, Dict
 
@@ -12,6 +12,7 @@ class RFIDEventBase(BaseModel):
     observed_at: datetime
     received_at: Optional[datetime] = None
     valid: bool = True
+    source: str = "SIMULATION"  # SIMULATION or PHYSICAL
     raw_payload: Optional[Dict[str, Any]] = None
 
 class RFIDEventCreate(RFIDEventBase):
@@ -22,8 +23,7 @@ class RFIDEventResponse(RFIDEventBase):
     antenna_code: Optional[str] = None
     shelf_code: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ObservationWindowResponse(BaseModel):
     id: int
@@ -34,7 +34,6 @@ class ObservationWindowResponse(BaseModel):
     primary_antenna_id: Optional[int] = None
     total_read_count: int
     median_rssi: Optional[float] = None
+    source: str = "SIMULATION"
 
-    class Config:
-        from_attributes = True
-
+    model_config = ConfigDict(from_attributes=True)
