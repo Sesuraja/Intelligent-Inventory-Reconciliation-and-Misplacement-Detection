@@ -101,6 +101,16 @@ class UHFHardwareSimulator(AbstractReaderAdapter):
         if epc in self.tag_physical_states:
             self.tag_physical_states[epc]["is_shadowed"] = shadowed
 
+    @property
+    def tags(self) -> Dict[str, Dict[str, Any]]:
+        return self.tag_physical_states
+
+    def move_tag(self, epc: str, shelf: str):
+        self.set_tag_physical_location(epc, shelf)
+
+    def set_tag_presence(self, epc: str, is_present: bool):
+        self.set_tag_missing(epc, not is_present)
+
     async def poll_observations(self) -> List[Dict[str, Any]]:
         """
         Simulates an RF sweep across all 4 ports according to physical positions,

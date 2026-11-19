@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, CheckCircle2, AlertTriangle, EyeOff, Radio, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, CheckCircle2, AlertTriangle, EyeOff, Radio, ShieldCheck, Smartphone, QrCode, Battery } from 'lucide-react';
 import { DiscrepancyItem, ShelfItem } from '../../types';
+import { api } from '../../services/api';
 
 interface VerificationModalProps {
   discrepancy: DiscrepancyItem | null;
@@ -21,15 +22,46 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
 
   const [selectedResult, setSelectedResult] = useState<string>('CONFIRMED_MISPLACED');
   const [actualShelfId, setActualShelfId] = useState<number>(
-    discrepancy.observed_location_id || discrepancy.expected_location_id || 1
+    discrepancy.observed_location_id || discrepancy.expected_location_id || (shelves[0]?.id || 1)
   );
   const [operatorNotes, setOperatorNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [handheldReaders, setHandheldReaders] = useState<any[]>([]);
+  const [selectedDeviceCode, setSelectedDeviceCode] = useState<string>('HH-01');
+  const [scannedBarcode, setScannedBarcode] = useState<string>('');
+
+  useEffect(() => {
+    api.getHandheldReaders()
+      .then((readers) => {
+        setHandheldReaders(readers);
+        if (readers.length > 0) {
+          setSelectedDeviceCode(readers[0].device_code);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const selectedShelfObj = shelves.find((s) => s.id === actualShelfId);
+
+  const simulateBarcodeScan = () => {
+    const code = selectedShelfObj ? `QR-${selectedShelfObj.shelf_code}` : 'QR-SHELF-A';
+    setScannedBarcode(code);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const shelfCode = selectedShelfObj ? selectedShelfObj.shelf_code : (discrepancy.observed_shelf_code || 'SHELF_A');
+      await api.submitGroundTruthVerification({
+        discrepancy_id: discrepancy.id,
+        epc: discrepancy.epc,
+        actual_shelf_code: shelfCode,
+        verification_status: selectedResult,
+        device_code: selectedDeviceCode,
+        barcode_scanned: scannedBarcode || `QR-${shelfCode}`,
+        notes: operatorNotes || `Verified via ${selectedDeviceCode}`
+      });
       await onSubmitVerification(discrepancy.id, selectedResult, actualShelfId, operatorNotes);
       onClose();
     } catch (err: any) {
@@ -41,13 +73,16 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-5 text-xs text-slate-800">
+      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4 text-xs text-slate-800">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center space-x-2">
             <ShieldCheck className="w-5 h-5 text-emerald-600" />
-            <h2 className="text-base font-bold text-slate-900">Physical Shelf Ground Truth Verification</h2>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Physical Ground Truth Verification</h2>
+              <p className="text-[11px] text-slate-500">Handheld UHF scan overrides fixed-reader predictions unconditionally</p>
+            </div>
           </div>
           <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
             <X className="w-5 h-5" />
@@ -72,6 +107,34 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
         {/* Verification Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           
+          {/* Handheld Device Selection */}
+          <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-slate-800 font-semibold flex items-center space-x-1.5">
+                <Smartphone className="w-3.5 h-3.5 text-blue-600" />
+                <span>Handheld RFID Reader:</span>
+              </label>
+              {handheldReaders.length > 0 && (
+                <span className="flex items-center space-x-1 text-[10px] text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  <Battery className="w-3 h-3 text-emerald-600" />
+                  <span>{handheldReaders.find(r => r.device_code === selectedDeviceCode)?.battery_level ?? 94}% Battery</span>
+                </span>
+              )}
+            </div>
+            <select
+              value={selectedDeviceCode}
+              onChange={(e) => setSelectedDeviceCode(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-900 font-medium focus:outline-none focus:border-blue-500"
+            >
+              {handheldReaders.map((r) => (
+                <option key={r.id} value={r.device_code}>
+                  {r.device_code} - {r.model} ({r.assigned_operator})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Result Buttons */}
           <div>
             <label className="text-slate-800 font-semibold block mb-2">Physical Condition Confirmed by Operator:</label>
             <div className="grid grid-cols-2 gap-2">
@@ -88,7 +151,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                     key={opt.id}
                     type="button"
                     onClick={() => setSelectedResult(opt.id)}
-                    className={`p-3 rounded-xl border text-left flex flex-col justify-between transition ${
+                    className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition ${
                       isSelected
                         ? 'bg-blue-50/80 border-blue-500 text-blue-950 shadow-xs'
                         : 'bg-slate-50/60 border-slate-200 text-slate-600 hover:border-slate-300'
@@ -119,20 +182,41 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="text-[10px] text-slate-500 mt-1">
-                Selecting this shelf will log an authorized reconciliation movement and update official WMS stock.
-              </p>
             </div>
           )}
+
+          {/* Barcode / QR Scan verification */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-slate-800 font-semibold flex items-center space-x-1">
+                <QrCode className="w-3.5 h-3.5 text-slate-600" />
+                <span>Location Barcode / QR Scan:</span>
+              </label>
+              <button
+                type="button"
+                onClick={simulateBarcodeScan}
+                className="text-[10px] text-blue-600 hover:text-blue-800 font-medium underline"
+              >
+                Auto-Scan Shelf QR
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="Scan shelf QR code with handheld camera..."
+              value={scannedBarcode}
+              onChange={(e) => setScannedBarcode(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-mono text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500"
+            />
+          </div>
 
           <div>
             <label className="text-slate-800 font-semibold block mb-1">Operator Audit Notes:</label>
             <textarea
               rows={2}
-              placeholder="e.g. Physically inspected bin. Carton placed behind metal partition on Shelf C."
+              placeholder="e.g. Scanned bin with Zebra RFD40. Confirmed carton placed behind metal partition."
               value={operatorNotes}
               onChange={(e) => setOperatorNotes(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-blue-500"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-blue-500"
             />
           </div>
 
@@ -150,7 +234,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold transition flex items-center space-x-1.5 shadow-xs"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>{submitting ? 'Recording Truth...' : 'Submit Verification'}</span>
+              <span>{submitting ? 'Recording Ground Truth...' : 'Confirm Ground Truth'}</span>
             </button>
           </div>
 

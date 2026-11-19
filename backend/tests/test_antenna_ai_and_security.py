@@ -1,9 +1,13 @@
 import pytest
+from fastapi.testclient import TestClient
+from app.main import app
 from app.ai.location_inference import location_engine
 from app.ai.read_reliability import read_reliability_model
 from app.ai.root_cause import root_cause_model
 from app.rfid.event_validator import EventValidator
 from app.core.security import verify_password, get_password_hash, create_access_token, decode_access_token
+
+client = TestClient(app)
 
 def test_antenna_location_inference_clear_signal():
     port_shelf_map = {1: "SHELF_A", 2: "SHELF_B", 3: "SHELF_C", 4: "SHELF_D"}
@@ -122,3 +126,13 @@ def test_event_validator_inputs():
     # Out-of-range RSSI (+10 dBm)
     v_bad_rssi, _ = EventValidator.validate_event({"epc": "EPC-001", "rssi_dbm": 15.0, "antenna_id": 1})
     assert v_bad_rssi is False
+
+def test_ai_evaluation_and_provenance_endpoint():
+    res = client.get("/api/v1/ai/evaluation")
+    assert res.status_code == 200
+    data = res.json()
+    assert "provenance" in data
+    assert "SYNTHETIC" in data["provenance"]
+    assert "models" in data
+    assert "calibrated_gradient_boosting" in data["models"]
+    assert "physical_ground_truth_samples_collected" in data

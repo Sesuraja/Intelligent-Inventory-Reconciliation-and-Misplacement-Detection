@@ -25,6 +25,8 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.ai import router as ai_router
 from app.api.v1.reconciliation import router as reconciliation_router
 from app.api.v1.simulator import router as simulator_router
+from app.api.v1.handheld import router as handheld_router
+from app.api.v1.wms import router as wms_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,6 +72,8 @@ app.include_router(reports_router, prefix=v1)
 app.include_router(ai_router, prefix=v1)
 app.include_router(reconciliation_router, prefix=v1)
 app.include_router(simulator_router, prefix=v1)
+app.include_router(handheld_router, prefix=v1)
+app.include_router(wms_router, prefix=v1)
 
 @app.get(f"{v1}/system/health")
 def system_health():

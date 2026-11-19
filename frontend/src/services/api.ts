@@ -128,6 +128,59 @@ export const api = {
   testReaderPhysicalConnection: (readerId: number = 1) =>
     fetchJSON<any>(`/readers/${readerId}/test-connection`, { method: 'POST' }),
 
+  // Handheld RFID & Ground Truth Verification
+  getHandheldReaders: () => fetchJSON<any[]>('/handheld/readers'),
+  registerHandheldReader: (data: any) =>
+    fetchJSON<any>('/handheld/readers/register', { method: 'POST', body: JSON.stringify(data) }),
+  createHandheldSession: (data: any) =>
+    fetchJSON<any>('/handheld/sessions', { method: 'POST', body: JSON.stringify(data) }),
+  recordHandheldEvents: (sessionId: number, data: any) =>
+    fetchJSON<any>(`/handheld/sessions/${sessionId}/events`, { method: 'POST', body: JSON.stringify(data) }),
+  completeHandheldSession: (sessionId: number) =>
+    fetchJSON<any>(`/handheld/sessions/${sessionId}/complete`, { method: 'POST' }),
+  submitGroundTruthVerification: (data: {
+    discrepancy_id?: number;
+    epc: string;
+    actual_shelf_code: string;
+    verification_status: string;
+    verified_by?: string;
+    device_code?: string;
+    barcode_scanned?: string;
+    notes?: string;
+    auto_reconcile?: boolean;
+  }) => fetchJSON<any>('/handheld/verification', { method: 'POST', body: JSON.stringify(data) }),
+  getHandheldScans: (limit: number = 50) => fetchJSON<any[]>(`/handheld/scans?limit=${limit}`),
+  syncHandheldBatch: (data: any) =>
+    fetchJSON<any>('/handheld/sync', { method: 'POST', body: JSON.stringify(data) }),
+
+  // WMS Sandbox & Inventory State Engine
+  getWMSInventory: (status?: string, shelf?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (shelf) params.append('shelf', shelf);
+    return fetchJSON<any[]>(`/wms/inventory?${params.toString()}`);
+  },
+  wmsReceive: (data: { sku: string; quantity: number; target_shelf_code: string; lot_number?: string; epc_prefix?: string }) =>
+    fetchJSON<any>('/wms/receive', { method: 'POST', body: JSON.stringify(data) }),
+  wmsPutaway: (data: { epc: string; to_shelf_code: string; user_name?: string }) =>
+    fetchJSON<any>('/wms/putaway', { method: 'POST', body: JSON.stringify(data) }),
+  wmsMove: (data: { epc: string; to_shelf_code: string; user_name?: string; reason?: string }) =>
+    fetchJSON<any>('/wms/move', { method: 'POST', body: JSON.stringify(data) }),
+  wmsPick: (data: { epc?: string; sku?: string; order_number?: string }) =>
+    fetchJSON<any>('/wms/pick', { method: 'POST', body: JSON.stringify(data) }),
+  wmsShip: (data: { epc?: string; order_number?: string }) =>
+    fetchJSON<any>('/wms/ship', { method: 'POST', body: JSON.stringify(data) }),
+  wmsAdjust: (data: { epc: string; new_shelf_code?: string; quantity?: number; reason: string }) =>
+    fetchJSON<any>('/wms/adjust', { method: 'POST', body: JSON.stringify(data) }),
+  wmsSync: () => fetchJSON<any>('/wms/sync', { method: 'POST' }),
+  wmsInjectError: (data: { error_type: string; epc?: string; target_shelf_code?: string; notes?: string }) =>
+    fetchJSON<any>('/wms/inject-error', { method: 'POST', body: JSON.stringify(data) }),
+  getWMSTransactions: (limit: number = 50) => fetchJSON<any[]>(`/wms/transactions?limit=${limit}`),
+
+  // Reconciliation Engine
+  triggerReconciliation: () => fetchJSON<any>('/reconciliation/run', { method: 'POST' }),
+  getReconciliationStatus: () => fetchJSON<any>('/reconciliation/status'),
+
   // Auth & System Administration
   getUsers: () => fetchJSON<any[]>('/auth/users'),
   getMe: () => fetchJSON<any>('/auth/me'),

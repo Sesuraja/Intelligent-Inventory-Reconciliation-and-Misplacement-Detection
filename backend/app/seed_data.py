@@ -13,6 +13,8 @@ from app.models.inventory import Inventory, InventoryMovement
 from app.models.discrepancy import Discrepancy, LocationPrediction, VerificationLog
 from app.models.ai_model import AIPrediction, AIModel, ModelTrainingRun
 from app.models.audit import AuditLog
+from app.models.handheld import HandheldDevice, HandheldScanSession, HandheldScanEvent, GroundTruthVerification
+from app.models.wms import WMSInventory, WMSOrder, WMSOrderLine, WMSTransaction
 from app.rfid.reader_manager import reader_manager
 
 def _migrate_schema():
@@ -44,6 +46,7 @@ def seed_database():
         # Check if already seeded
         if db.query(Warehouse).first():
             print("Database already contains seed data.")
+            _seed_handheld_and_wms(db, datetime.now(timezone.utc))
             _sync_simulator_with_db(db)
             return
 
@@ -358,8 +361,106 @@ def seed_database():
         db.commit()
         print("Database seeding completed successfully.")
 
+        _seed_handheld_and_wms(db, now)
+
     finally:
         db.close()
+
+def _seed_handheld_and_wms(db: Session, now: datetime):
+    try:
+        # Seed Handheld Readers
+        if db.query(HandheldDevice).count() == 0:
+            hh1 = HandheldDevice(
+                device_code="HH-01",
+                model="Zebra TC26 / RFD40 UHF Sled",
+                assigned_operator="Alex Rivera",
+                status="ACTIVE",
+                battery_level=94,
+                ip_address="192.168.1.151",
+                last_seen=now,
+                created_at=now - timedelta(days=7)
+            )
+            hh2 = HandheldDevice(
+                device_code="HH-02",
+                model="Chainway C72 Rugged UHF",
+                assigned_operator="Sarah Jenkins",
+                status="IDLE",
+                battery_level=88,
+                ip_address="192.168.1.152",
+                last_seen=now - timedelta(hours=2),
+                created_at=now - timedelta(days=5)
+            )
+            db.add_all([hh1, hh2])
+            db.flush()
+
+        # Seed WMS Inventory mirroring expected items
+        if db.query(WMSInventory).count() == 0:
+            inv_items = db.query(Inventory).all()
+            for item in inv_items:
+                sku = item.product.sku if item.product else "SKU-UNKNOWN"
+                wms_item = WMSInventory(
+                    epc=item.epc,
+                    sku=sku,
+                    product_id=item.product_id,
+                    expected_shelf_id=item.expected_location_id,
+                    quantity=1,
+                    lot_number="LOT-2026-A",
+                    status="AVAILABLE",
+                    updated_at=now
+                )
+                db.add(wms_item)
+            db.flush()
+
+        # Seed WMS Orders
+        if db.query(WMSOrder).count() == 0:
+            shelves = db.query(Shelf).all()
+            s1 = shelves[0].id if shelves else 1
+            s2 = shelves[1].id if len(shelves) > 1 else s1
+            ord1 = WMSOrder(
+                order_number="ORD-INB-101",
+                order_type="INBOUND",
+                status="COMPLETED",
+                customer_or_vendor="Global Parts Logistics",
+                created_at=now - timedelta(days=1),
+                completed_at=now - timedelta(hours=12)
+            )
+            ord2 = WMSOrder(
+                order_number="ORD-OUT-201",
+                order_type="OUTBOUND",
+                status="PROCESSING",
+                customer_or_vendor="Apex Manufacturing Co.",
+                created_at=now - timedelta(hours=3)
+            )
+            db.add_all([ord1, ord2])
+            db.flush()
+
+            line1 = WMSOrderLine(order_id=ord1.id, sku="SKU-1001", requested_quantity=1, fulfilled_quantity=1, target_shelf_id=s1)
+            line2 = WMSOrderLine(order_id=ord2.id, sku="SKU-1004", requested_quantity=1, fulfilled_quantity=0, target_shelf_id=s2)
+            db.add_all([line1, line2])
+            db.flush()
+
+        # Seed WMS Transactions
+        if db.query(WMSTransaction).count() == 0:
+            shelves = db.query(Shelf).all()
+            s1 = shelves[0].id if shelves else 1
+            tx1 = WMSTransaction(
+                transaction_type="RECEIPT",
+                epc="EPC-9001",
+                sku="SKU-1001",
+                to_shelf_id=s1,
+                quantity=1,
+                user_name="Alex Rivera",
+                reference_code="PO-44819",
+                notes="Initial receipt from vendor container",
+                timestamp=now - timedelta(days=1)
+            )
+            db.add(tx1)
+            db.flush()
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Handheld & WMS seed notice: {e}")
 
 def _sync_simulator_with_db(db: Session):
     sim = reader_manager.get_simulator()

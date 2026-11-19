@@ -24,6 +24,7 @@ import { EmptyState } from '../common/EmptyState';
 import { CreateShelfModal } from './CreateShelfModal';
 import { AssignTagModal } from './AssignTagModal';
 import { CreateProductModal } from './CreateProductModal';
+import { WMSSandboxView } from './WMSSandboxView';
 import { useAppSettings } from '../../context/SettingsContext';
 
 export const InventoryTab: React.FC = () => {
@@ -38,7 +39,7 @@ export const InventoryTab: React.FC = () => {
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [selectedShelf, setSelectedShelf] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
-  const [activeSubView, setActiveSubView] = useState<'inventory' | 'shelves' | 'catalog'>('inventory');
+  const [activeSubView, setActiveSubView] = useState<'inventory' | 'shelves' | 'catalog' | 'wms'>('inventory');
 
   // Modals
   const [showMoveModal, setShowMoveModal] = useState(false);
@@ -148,7 +149,17 @@ export const InventoryTab: React.FC = () => {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Master Product Catalog ({products.length})
+            Master Catalog ({products.length})
+          </button>
+          <button
+            onClick={() => setActiveSubView('wms')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubView === 'wms'
+                ? 'bg-white text-blue-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            WMS Expected Sandbox
           </button>
         </div>
 
@@ -389,6 +400,11 @@ export const InventoryTab: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* View: WMS Expected Sandbox */}
+      {activeSubView === 'wms' && (
+        <WMSSandboxView shelves={shelves} onDataChanged={loadData} />
       )}
 
       {/* View: Tracked Stock & EPC Records Table */}

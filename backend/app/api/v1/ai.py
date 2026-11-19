@@ -293,6 +293,37 @@ def get_scored_event_json(epc: str, db: Session = Depends(get_db)):
         "evidence": rc["evidence"]
     }
 
+@router.get("/evaluation")
+def get_model_evaluation(db: Session = Depends(get_db)):
+    """
+    Returns empirical evaluation metrics, baseline comparison, and synthetic provenance disclosure.
+    Also returns physical ground-truth verification sample counts accumulated from handheld audits.
+    """
+    import json
+    import os
+    from app.models.handheld import GroundTruthVerification
+    
+    candidate_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "ml", "evaluation", "baseline_comparison_report.json")),
+        os.path.abspath(os.path.join(os.getcwd(), "ml", "evaluation", "baseline_comparison_report.json")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml", "evaluation", "baseline_comparison_report.json"))
+    ]
+    report = {}
+    for path in candidate_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    report = json.load(f)
+                    break
+            except Exception:
+                pass
+
+    gt_count = db.query(GroundTruthVerification).count()
+    report["physical_ground_truth_samples_collected"] = gt_count
+    report["physical_benchmark_readiness"] = "ACCUMULATING_FIELD_DATA" if gt_count < 100 else "READY_FOR_RETRAINING"
+    report["disclosure"] = "Current ML models are benchmarked against synthetic physics datasets. Benchmarks will automatically update as physical handheld scans accumulate."
+    return report
+
 @router.get("/scored-events")
 def get_all_scored_events(db: Session = Depends(get_db)):
     """Returns standardized scored event JSON for all registered items."""

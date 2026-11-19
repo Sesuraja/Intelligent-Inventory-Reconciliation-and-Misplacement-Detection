@@ -6,11 +6,13 @@ import {
   Sparkles,
   MapPin,
   Check,
-  Filter
+  Filter,
+  Smartphone
 } from 'lucide-react';
 import { DiscrepancyItem, ShelfItem } from '../../types';
 import { api } from '../../services/api';
 import { VerificationModal } from './VerificationModal';
+import { HandheldBatchModal } from './HandheldBatchModal';
 import { StatusBadge } from '../common/StatusBadge';
 import { LoadingState } from '../common/LoadingState';
 import { EmptyState } from '../common/EmptyState';
@@ -36,6 +38,7 @@ export const AIExceptionsTab: React.FC<AIExceptionsTabProps> = ({
   // Selected exception for deep AI inspection drawer
   const [selectedException, setSelectedException] = useState<DiscrepancyItem | null>(null);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [showBatchModal, setShowBatchModal] = useState(false);
 
   useEffect(() => {
     loadExceptions();
@@ -140,16 +143,26 @@ export const AIExceptionsTab: React.FC<AIExceptionsTabProps> = ({
           })}
         </div>
 
-        {/* Search */}
-        <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search exceptions..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition"
-          />
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <button
+            onClick={() => setShowBatchModal(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold shadow-xs transition"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-blue-600" />
+            <span>+ Handheld Batch (CSV)</span>
+          </button>
+
+          {/* Search */}
+          <div className="relative w-full sm:w-60">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search exceptions..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white transition"
+            />
+          </div>
         </div>
 
       </div>
@@ -386,6 +399,16 @@ export const AIExceptionsTab: React.FC<AIExceptionsTabProps> = ({
         isOpen={showVerificationModal}
         onClose={() => setShowVerificationModal(false)}
         onSubmitVerification={handleVerifySubmit}
+      />
+
+      {/* Handheld Batch Upload Modal */}
+      <HandheldBatchModal
+        isOpen={showBatchModal}
+        onClose={() => setShowBatchModal(false)}
+        onSuccess={() => {
+          loadExceptions();
+          onRefreshData();
+        }}
       />
 
     </div>

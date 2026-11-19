@@ -11,11 +11,20 @@ from app.models.discrepancy import Discrepancy, LocationPrediction
 from app.models.ai_model import AIPrediction
 from app.models.reader import Reader, Antenna
 from app.models.rfid_event import RFIDEvent
+from app.models.wms import WMSInventory
+from app.models.handheld import GroundTruthVerification
 from app.ai.feature_engineering import FeatureEngine
 from app.ai.location_inference import location_engine
 from app.ai.read_reliability import read_reliability_model
 from app.ai.root_cause import root_cause_model
 from app.realtime.websocket_manager import ws_manager
+
+def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 class ReconciliationService:
     """
@@ -79,6 +88,13 @@ class ReconciliationService:
             epc = item.epc
             expected_shelf = item.expected_shelf.shelf_code if item.expected_shelf else "SHELF_A"
             pkg_class = item.tag.packaging_class if item.tag else "CARDBOARD"
+
+            # Authoritative expected location from WMS Sandbox if present
+            wms_inv = db.query(WMSInventory).filter(WMSInventory.epc == epc).first()
+            if wms_inv and wms_inv.expected_shelf:
+                expected_shelf = wms_inv.expected_shelf.shelf_code
+                if item.expected_location_id != wms_inv.expected_shelf_id:
+                    item.expected_location_id = wms_inv.expected_shelf_id
             
             # Check recent movement authorization
             recent_mov = db.query(InventoryMovement).filter(
@@ -88,6 +104,11 @@ class ReconciliationService:
             unauthorized_move = False
             if recent_mov and recent_mov.authorized == 0:
                 unauthorized_move = True
+
+            # Check physical ground-truth verification (Rule 6: Ground truth overrides fixed prediction)
+            recent_gt = db.query(GroundTruthVerification).filter(
+                GroundTruthVerification.epc == epc
+            ).order_by(GroundTruthVerification.timestamp.desc()).first()
 
             evts = epc_events.get(epc, [])
             
@@ -136,6 +157,21 @@ class ReconciliationService:
                     predicted_state = "LIKELY_MISSING"
                 confidence = reliability_result["reliability_score"]
                 pred_shelf_code = None
+
+            # Apply Ground Truth Override (Rule 6: Handheld physical ground truth overrides fixed prediction)
+            gt_ts = _ensure_utc(recent_gt.timestamp) if recent_gt else None
+            mov_ts = _ensure_utc(recent_mov.timestamp) if recent_mov else None
+            if recent_gt and gt_ts and (now - gt_ts).total_seconds() < 7200:
+                if not mov_ts or mov_ts <= gt_ts:
+                    if recent_gt.verification_status in ("CONFIRMED_MISPLACED", "VERIFIED_IN_PLACE", "FALSE_POSITIVE"):
+                        if recent_gt.verified_shelf:
+                            pred_shelf_code = recent_gt.verified_shelf.shelf_code
+                        predicted_state = "IN_PLACE" if pred_shelf_code == expected_shelf else "VERIFIED"
+                        confidence = 1.0
+                    elif recent_gt.verification_status == "CONFIRMED_MISSING":
+                        predicted_state = "LIKELY_MISSING"
+                        confidence = 1.0
+                        pred_shelf_code = None
 
             # Update Inventory status
             item.status = predicted_state
