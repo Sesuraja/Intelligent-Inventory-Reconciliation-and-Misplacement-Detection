@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ObservationWindowFeatureSchema",
+  "version": "1.0.0",
+  "description": "Standardized canonical feature snapshot engineered across sliding observation windows for P0/P1 models.",
+  "type": "object",
+  "required": [
+    "epc",
+    "expected_location",
+    "total_reads",
+    "last_seen_seconds_ago",
+    "first_seen_seconds_ago",
+    "reader_health_status",
+    "antenna_features"
+  ],
+  "properties": {
+    "epc": { "type": "string" },
+    "expected_location": { "type": "string" },
+    "total_reads": { "type": "integer", "minimum": 0 },
+    "last_seen_seconds_ago": { "type": "number", "minimum": 0 },
+    "first_seen_seconds_ago": { "type": "number", "minimum": 0 },
+    "reader_health_status": { "type": "string", "enum": ["ONLINE", "OFFLINE", "DEGRADED"] },
+    "packaging_class": { "type": "string", "enum": ["CARDBOARD", "PLASTIC", "LIQUID_PROXIMITY", "METAL_SHIELDED"] },
+    "tag_orientation": { "type": "string", "enum": ["FACING_ANTENNA", "SIDE_ON", "OCCLUDED", "UNKNOWN"] },
+    "antenna_features": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "read_count": { "type": "integer" },
+          "median_rssi_dbm": { "type": ["number", "null"] },
+          "rssi_variance": { "type": ["number", "null"] }
+        }
+      }
+    }
+  }
+}
+
