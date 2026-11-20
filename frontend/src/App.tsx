@@ -3,6 +3,8 @@ import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
 import { SettingsModal } from './components/layout/SettingsModal';
+import { UserRolesView } from './components/supporting/UserRolesView';
+import { HelpDocsView } from './components/supporting/HelpDocsView';
 import { DashboardTab } from './components/dashboard/DashboardTab';
 import { InventoryTab } from './components/inventory/InventoryTab';
 import { LiveMonitoringTab } from './components/monitoring/LiveMonitoringTab';
@@ -10,6 +12,7 @@ import { AIExceptionsTab } from './components/exceptions/AIExceptionsTab';
 import { ReportsTab } from './components/reports/ReportsTab';
 import {
   NavigationTab,
+  SubPageId,
   DashboardSummary,
   ReaderItem,
   AntennaItem,
@@ -26,6 +29,9 @@ const pathToTab = (pathname: string): NavigationTab => {
   if (clean === 'monitoring' || clean === 'live' || clean === 'live-monitoring') return 'monitoring';
   if (clean === 'exceptions' || clean === 'ai-exceptions') return 'exceptions';
   if (clean === 'reports' || clean === 'audit') return 'reports';
+  if (clean === 'users' || clean === 'roles') return 'users';
+  if (clean === 'help' || clean === 'docs') return 'help';
+  if (clean === 'settings') return 'settings';
   return 'dashboard';
 };
 
@@ -35,6 +41,9 @@ const tabToTitle: Record<NavigationTab, string> = {
   monitoring: 'Live UHF RFID Monitoring & Antenna Port Matrix | Intelligent Inventory Reconciliation',
   exceptions: 'AI Discrepancy & Root Cause Analysis | Intelligent Inventory Reconciliation',
   reports: 'Inventory Audit & AI Performance Reports | Intelligent Inventory Reconciliation',
+  users: 'User Roles & Access Control | Intelligent Inventory Reconciliation',
+  help: 'Help, Documentation & System Architecture | Intelligent Inventory Reconciliation',
+  settings: 'System Configuration & Settings | Intelligent Inventory Reconciliation',
 };
 
 export function App() {
@@ -44,6 +53,7 @@ export function App() {
     }
     return 'dashboard';
   });
+  const [currentSubPage, setCurrentSubPage] = useState<SubPageId>('dashboard-home');
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [readers, setReaders] = useState<ReaderItem[]>([]);
   const [antennas, setAntennas] = useState<AntennaItem[]>([]);
@@ -168,16 +178,19 @@ export function App() {
     }
   };
 
-  const handleNavigateTab = (tab: NavigationTab, filter?: string) => {
+  const handleNavigateTab = (tab: NavigationTab, subPageId?: SubPageId, filter?: string) => {
     if (filter) {
       setExceptionsFilter(filter);
     } else {
       setExceptionsFilter(undefined);
     }
     setCurrentTab(tab);
+    if (subPageId) {
+      setCurrentSubPage(subPageId);
+    }
     const targetPath = tab === 'dashboard' ? '/' : `/${tab}`;
     if (window.location.pathname !== targetPath) {
-      window.history.pushState({ tab }, '', targetPath);
+      window.history.pushState({ tab, subPageId }, '', targetPath);
     }
     document.title = tabToTitle[tab] || tabToTitle.dashboard;
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -203,6 +216,7 @@ export function App() {
       {/* Dark Navy Sidebar (Left Navigation) */}
       <Sidebar
         currentTab={currentTab}
+        currentSubPage={currentSubPage}
         onSelectTab={handleNavigateTab}
         openExceptionsCount={openExceptions}
         readerOnline={readerOnline}
@@ -235,7 +249,7 @@ export function App() {
               </span>
             </div>
             <button
-              onClick={() => handleNavigateTab('monitoring')}
+              onClick={() => handleNavigateTab('monitoring', 'monitoring-readers')}
               className="font-bold underline text-rose-700 hover:text-rose-900"
             >
               Hardware Console
@@ -248,13 +262,16 @@ export function App() {
           {currentTab === 'dashboard' && (
             <DashboardTab
               summary={summary}
-              onNavigateTab={handleNavigateTab}
-              onSelectDiscrepancy={(id) => handleNavigateTab('exceptions')}
+              onNavigateTab={(tab, filter) => handleNavigateTab(tab, undefined, filter)}
+              onSelectDiscrepancy={(id) => handleNavigateTab('exceptions', 'exceptions-discrepancies')}
             />
           )}
 
           {currentTab === 'inventory' && (
-            <InventoryTab />
+            <InventoryTab
+              subPage={currentSubPage}
+              onNavigateSubPage={(subId) => handleNavigateTab('inventory', subId as SubPageId)}
+            />
           )}
 
           {currentTab === 'monitoring' && (
@@ -264,6 +281,8 @@ export function App() {
               liveEvents={liveEvents}
               isLiveConnected={isLiveConnected}
               onRefreshData={loadSummary}
+              subPage={currentSubPage}
+              onNavigateSubPage={(subId) => handleNavigateTab('monitoring', subId as SubPageId)}
             />
           )}
 
@@ -272,11 +291,39 @@ export function App() {
               initialFilter={exceptionsFilter}
               shelves={shelves}
               onRefreshData={loadSummary}
+              subPage={currentSubPage}
+              onNavigateSubPage={(subId) => handleNavigateTab('exceptions', subId as SubPageId)}
             />
           )}
 
           {currentTab === 'reports' && (
-            <ReportsTab />
+            <ReportsTab
+              subPage={currentSubPage}
+              onNavigateSubPage={(subId) => handleNavigateTab('reports', subId as SubPageId)}
+            />
+          )}
+
+          {currentTab === 'users' && (
+            <UserRolesView />
+          )}
+
+          {currentTab === 'help' && (
+            <HelpDocsView />
+          )}
+
+          {currentTab === 'settings' && (
+            <div className="bg-white border border-slate-200/90 rounded-2xl p-8 shadow-xs space-y-4 max-w-2xl mx-auto text-center">
+              <h2 className="text-lg font-bold text-slate-900">S1. System Settings & Hardware Parameters</h2>
+              <p className="text-xs text-slate-500">
+                Configure global facility parameters, WMS API hosts, model thresholds, and physical reader addresses.
+              </p>
+              <button
+                onClick={handleOpenSettings}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+              >
+                Launch Settings Configuration Modal
+              </button>
+            </div>
           )}
         </main>
 

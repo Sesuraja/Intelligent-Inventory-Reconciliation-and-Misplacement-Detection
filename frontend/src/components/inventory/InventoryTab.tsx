@@ -16,7 +16,7 @@ import {
   Package,
   Check
 } from 'lucide-react';
-import { InventoryItem, ProductItem, ShelfItem } from '../../types';
+import { InventoryItem, ProductItem, ShelfItem, AntennaItem } from '../../types';
 import { api } from '../../services/api';
 import { StatusBadge } from '../common/StatusBadge';
 import { LoadingState } from '../common/LoadingState';
@@ -25,13 +25,21 @@ import { CreateShelfModal } from './CreateShelfModal';
 import { AssignTagModal } from './AssignTagModal';
 import { CreateProductModal } from './CreateProductModal';
 import { WMSSandboxView } from './WMSSandboxView';
+import { WarehouseLayoutView } from './WarehouseLayoutView';
+import { InventoryHistoryView } from './InventoryHistoryView';
 import { useAppSettings } from '../../context/SettingsContext';
 
-export const InventoryTab: React.FC = () => {
+interface InventoryTabProps {
+  subPage?: string;
+  onNavigateSubPage?: (subPageId: string) => void;
+}
+
+export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateSubPage }) => {
   const { settings } = useAppSettings();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [shelves, setShelves] = useState<ShelfItem[]>([]);
+  const [antennas, setAntennas] = useState<AntennaItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters & Search
@@ -39,7 +47,15 @@ export const InventoryTab: React.FC = () => {
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [selectedShelf, setSelectedShelf] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
-  const [activeSubView, setActiveSubView] = useState<'inventory' | 'shelves' | 'catalog' | 'wms'>('inventory');
+  const [activeSubView, setActiveSubView] = useState<'products' | 'tags' | 'layout' | 'wms' | 'history'>('products');
+
+  useEffect(() => {
+    if (subPage === 'inventory-tags') setActiveSubView('tags');
+    else if (subPage === 'inventory-layout') setActiveSubView('layout');
+    else if (subPage === 'inventory-wms') setActiveSubView('wms');
+    else if (subPage === 'inventory-history') setActiveSubView('history');
+    else if (subPage === 'inventory-products') setActiveSubView('products');
+  }, [subPage]);
 
   // Modals
   const [showMoveModal, setShowMoveModal] = useState(false);
@@ -59,13 +75,16 @@ export const InventoryTab: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [invData, prodData, shelfData] = await Promise.all([
+      const [invData, prodData, shelfData, antData] = await Promise.all([
         api.getInventory(),
         api.getProducts(),
-        api.getShelves()
+        api.getShelves(),
+        api.getAntennas()
       ]);
       setItems(invData);
       setProducts(prodData);
+      setShelves(shelfData);
+      setAntennas(antData);
       setShelves(shelfData);
       if (shelfData.length > 0) {
         setTargetShelfId(shelfData[0].id);
@@ -120,46 +139,56 @@ export const InventoryTab: React.FC = () => {
       
       {/* Header with Subviews & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200/90 p-4 rounded-2xl shadow-xs">
-        <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+        <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
           <button
-            onClick={() => setActiveSubView('inventory')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
-              activeSubView === 'inventory'
-                ? 'bg-white text-slate-900 shadow-xs'
+            onClick={() => { setActiveSubView('products'); onNavigateSubPage?.('inventory-products'); }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubView === 'products'
+                ? 'bg-white text-slate-900 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Tracked Stock & EPC Records
+            2.1 Products & SKUs ({products.length})
           </button>
           <button
-            onClick={() => setActiveSubView('shelves')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
-              activeSubView === 'shelves'
-                ? 'bg-white text-slate-900 shadow-xs'
+            onClick={() => { setActiveSubView('tags'); onNavigateSubPage?.('inventory-tags'); }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubView === 'tags'
+                ? 'bg-white text-slate-900 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Warehouse Shelves Map
+            2.2 EPC / Tags ({items.length})
           </button>
           <button
-            onClick={() => setActiveSubView('catalog')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
-              activeSubView === 'catalog'
-                ? 'bg-white text-slate-900 shadow-xs'
+            onClick={() => { setActiveSubView('layout'); onNavigateSubPage?.('inventory-layout'); }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubView === 'layout'
+                ? 'bg-white text-slate-900 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Master Catalog ({products.length})
+            2.3 Warehouse Layout
           </button>
           <button
-            onClick={() => setActiveSubView('wms')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition ${
+            onClick={() => { setActiveSubView('wms'); onNavigateSubPage?.('inventory-wms'); }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
               activeSubView === 'wms'
                 ? 'bg-white text-blue-900 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            WMS Expected Sandbox
+            2.4 WMS & Sync
+          </button>
+          <button
+            onClick={() => { setActiveSubView('history'); onNavigateSubPage?.('inventory-history'); }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubView === 'history'
+                ? 'bg-white text-purple-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            2.5 Inventory History
           </button>
         </div>
 
@@ -203,78 +232,8 @@ export const InventoryTab: React.FC = () => {
         </div>
       </div>
 
-      {/* View: Warehouse Shelves Map */}
-      {activeSubView === 'shelves' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {shelves.map((s) => {
-            const shelfItems = items.filter((i) => i.expected_shelf_code === s.shelf_code);
-            const misplacedHere = items.filter((i) => i.observed_shelf_code === s.shelf_code && i.expected_shelf_code !== s.shelf_code);
-            const inPlaceCount = shelfItems.filter((i) => i.status === 'IN_PLACE').length;
-            const utilization = Math.min(100, Math.round((shelfItems.length / s.capacity) * 100));
-
-            return (
-              <div key={s.id} className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-base font-bold text-slate-900">{s.shelf_code}</span>
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200">
-                      {s.assigned_antenna_code || 'ANT Mapped'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">{s.name || 'Pallet Rack'}</p>
-
-                  <div className="mt-4 space-y-2 text-xs">
-                    <div className="flex justify-between text-slate-600">
-                      <span>Expected Stock:</span>
-                      <strong className="text-slate-900 font-mono">{shelfItems.length} items</strong>
-                    </div>
-                    <div className="flex justify-between text-slate-600">
-                      <span>Confirmed In-Place:</span>
-                      <strong className="text-emerald-600 font-mono">{inPlaceCount}</strong>
-                    </div>
-                    <div className="flex justify-between text-slate-600">
-                      <span>Misplaced Detections:</span>
-                      <strong className={misplacedHere.length > 0 ? "text-amber-600 font-mono font-bold" : "text-slate-400 font-mono"}>
-                        {misplacedHere.length}
-                      </strong>
-                    </div>
-                    <div className="flex justify-between text-slate-600">
-                      <span>Capacity Utilization:</span>
-                      <strong className="text-slate-800 font-mono">{utilization}%</strong>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 pt-3 border-t border-slate-100">
-                  <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
-                      style={{ width: `${utilization}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Add Shelf Action Card */}
-          <button
-            onClick={() => setShowCreateShelfModal(true)}
-            className="border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50/50 hover:bg-blue-50/30 rounded-2xl p-5 flex flex-col items-center justify-center text-center space-y-2 text-slate-500 hover:text-blue-600 transition min-h-[220px]"
-          >
-            <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 group-hover:text-blue-600 shadow-xs">
-              <Plus className="w-5 h-5 text-blue-600" />
-            </div>
-            <span className="font-bold text-xs text-slate-900">Add Warehouse Shelf</span>
-            <span className="text-[11px] text-slate-400 max-w-[180px]">
-              Provision a new physical bay for antenna coverage
-            </span>
-          </button>
-        </div>
-      )}
-
-      {/* View: Master Product Catalog */}
-      {activeSubView === 'catalog' && (
+      {/* View: 2.1 Products & SKUs (Master Catalog) */}
+      {activeSubView === 'products' && (
         <div className="space-y-4">
           {/* Catalog Metrics & Actions Bar */}
           <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -402,13 +361,8 @@ export const InventoryTab: React.FC = () => {
         </div>
       )}
 
-      {/* View: WMS Expected Sandbox */}
-      {activeSubView === 'wms' && (
-        <WMSSandboxView shelves={shelves} onDataChanged={loadData} />
-      )}
-
-      {/* View: Tracked Stock & EPC Records Table */}
-      {activeSubView === 'inventory' && (
+      {/* View: 2.2 EPC / Tags (Tracked Stock & EPC Records Table) */}
+      {activeSubView === 'tags' && (
         <div className="space-y-4">
           
           {/* Search & Filter Bar */}
@@ -535,8 +489,26 @@ export const InventoryTab: React.FC = () => {
               <span className="font-mono text-emerald-700 font-medium">WMS Master Records Synchronized</span>
             </div>
           </div>
-
         </div>
+      )}
+
+      {/* View: 2.3 Warehouse Layout */}
+      {activeSubView === 'layout' && (
+        <WarehouseLayoutView
+          shelves={shelves}
+          items={items}
+          antennas={antennas}
+        />
+      )}
+
+      {/* View: 2.4 WMS & Sync */}
+      {activeSubView === 'wms' && (
+        <WMSSandboxView shelves={shelves} onDataChanged={loadData} />
+      )}
+
+      {/* View: 2.5 Inventory History */}
+      {activeSubView === 'history' && (
+        <InventoryHistoryView shelves={shelves} />
       )}
 
       {/* Movement Modal */}

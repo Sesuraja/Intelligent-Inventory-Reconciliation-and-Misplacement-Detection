@@ -74,6 +74,12 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'AI Discrepancy & Root-Cause Exceptions', desc: 'Automated misplacement detection, empirical evidence analysis and operator ground-truth audit' };
       case 'reports':
         return { title: 'Inventory Audits, Demand & Cycle Counting', desc: 'Full reconciliation logs, accuracy trends, P1 demand forecasting and risk prioritizer' };
+      case 'users':
+        return { title: 'User Roles & Access Control', desc: 'Role-based access privileges, operator accounts and system security matrix' };
+      case 'help':
+        return { title: 'Help, Documentation & System Architecture', desc: 'Hardware setup guides, OpenAPI endpoints, LLRP protocols and troubleshooting' };
+      case 'settings':
+        return { title: 'System Configuration & Settings', desc: 'Tune RF power thresholds, model parameters and external WMS API integrations' };
       default:
         return { title: 'Warehouse Operations', desc: 'Intelligent Inventory Reconciliation' };
     }
@@ -120,9 +126,22 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
           
           <div>
-            <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight leading-tight">
-              {title}
-            </h1>
+            <div className="flex items-center space-x-2">
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight leading-tight">
+                {title}
+              </h1>
+              <div className="hidden 2xl:flex items-center space-x-1.5 ml-3">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  5 Main Navigation
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  24 Total Pages
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                  Modular & Scalable Design
+                </span>
+              </div>
+            </div>
             <p className="text-xs text-slate-500 hidden sm:block mt-0.5">{desc}</p>
           </div>
         </div>

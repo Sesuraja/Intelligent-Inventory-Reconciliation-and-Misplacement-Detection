@@ -103,10 +103,15 @@ export const api = {
 
   // AI & Models
   getAIModels: () => fetchJSON<AIModelItem[]>('/ai/models'),
+  getAIEvaluation: () => fetchJSON<any>('/ai/evaluation'),
   retrainModel: (id: number) => fetchJSON<any>(`/ai/models/${id}/retrain`, { method: 'POST' }),
   getDemandForecast: () => fetchJSON<DemandForecastItem[]>('/ai/demand-forecast'),
   getCycleCountingPriorities: () => fetchJSON<CycleCountingItem[]>('/ai/cycle-counting'),
   getMisplacementDestination: (epc: string) => fetchJSON<any>(`/ai/destination/${epc}`),
+
+  // Calibration
+  runCalibrationExperiment: (data: any) =>
+    fetchJSON<any>('/antennas/calibrate', { method: 'POST', body: JSON.stringify(data) }),
 
   // Reports
   getReconciliationReport: () => fetchJSON<any>('/reports/reconciliation'),
@@ -130,6 +135,7 @@ export const api = {
 
   // Handheld RFID & Ground Truth Verification
   getHandheldReaders: () => fetchJSON<any[]>('/handheld/readers'),
+  getHandheldSessions: () => fetchJSON<any[]>('/handheld/sessions'),
   registerHandheldReader: (data: any) =>
     fetchJSON<any>('/handheld/readers/register', { method: 'POST', body: JSON.stringify(data) }),
   createHandheldSession: (data: any) =>

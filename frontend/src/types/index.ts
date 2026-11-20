@@ -1,4 +1,44 @@
-export type NavigationTab = 'dashboard' | 'inventory' | 'monitoring' | 'exceptions' | 'reports';
+export type NavigationTab =
+  | 'dashboard'
+  | 'inventory'
+  | 'monitoring'
+  | 'exceptions'
+  | 'reports'
+  | 'settings'
+  | 'users'
+  | 'help';
+
+export type SubPageId =
+  // 1. Dashboard (1 Page)
+  | 'dashboard-home'
+  // 2. Inventory (5 Pages)
+  | 'inventory-products'
+  | 'inventory-tags'
+  | 'inventory-layout'
+  | 'inventory-wms'
+  | 'inventory-history'
+  // 3. Live Monitoring (5 Pages)
+  | 'monitoring-readers'
+  | 'monitoring-reads'
+  | 'monitoring-handheld'
+  | 'monitoring-calibration'
+  | 'monitoring-stream'
+  // 4. AI Exceptions (5 Pages)
+  | 'exceptions-discrepancies'
+  | 'exceptions-root-cause'
+  | 'exceptions-actions'
+  | 'exceptions-ground-truth'
+  | 'exceptions-insights'
+  // 5. Reports (5 Pages)
+  | 'reports-reconciliation'
+  | 'reports-performance'
+  | 'reports-reader'
+  | 'reports-forecast'
+  | 'reports-exports'
+  // Supporting (3 Pages)
+  | 'supporting-settings'
+  | 'supporting-users'
+  | 'supporting-help';
 
 export interface KPISummary {
   total_products: number;
@@ -178,6 +218,10 @@ export interface DiscrepancyItem {
   ai_evidence: string[] | null;
   recommended_action: string | null;
   candidate_locations: { shelf_code: string; probability: number }[] | null;
+  observed_antenna_id?: number | null;
+  cause_distribution?: Record<string, number> | null;
+  feature_contributions?: { feature: string; impact: number; direction: 'positive' | 'negative' }[] | null;
+  ai_reasoning?: string | null;
 }
 
 export interface AIModelItem {
