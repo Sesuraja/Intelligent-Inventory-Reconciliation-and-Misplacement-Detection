@@ -74,7 +74,7 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
             }`}
           >
             <Server className="w-3.5 h-3.5 text-blue-600" />
-            <span>3.1 Reader & Antenna Status</span>
+            <span>Reader & Antenna Status</span>
           </button>
 
           <button
@@ -86,7 +86,7 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
             }`}
           >
             <Activity className="w-3.5 h-3.5 text-emerald-600" />
-            <span>3.2 Live RFID Reads</span>
+            <span>Live RFID Reads</span>
           </button>
 
           <button
@@ -98,7 +98,7 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
             }`}
           >
             <Smartphone className="w-3.5 h-3.5 text-indigo-600" />
-            <span>3.3 Handheld Scans</span>
+            <span>Handheld Scans</span>
           </button>
 
           <button
@@ -110,7 +110,7 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
             }`}
           >
             <Sliders className="w-3.5 h-3.5 text-purple-600" />
-            <span>3.4 Calibration & Health</span>
+            <span>Calibration & Health</span>
           </button>
 
           <button
@@ -122,7 +122,7 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
             }`}
           >
             <Terminal className="w-3.5 h-3.5 text-slate-700" />
-            <span>3.5 Event Stream (Raw Data)</span>
+            <span>Event Stream (Raw Data)</span>
           </button>
         </div>
 

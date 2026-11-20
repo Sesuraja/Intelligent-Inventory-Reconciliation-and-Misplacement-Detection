@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from datetime import datetime, timezone
 
@@ -27,27 +27,33 @@ def get_inventory(
     search: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Inventory)
+    query = db.query(Inventory).options(
+        joinedload(Inventory.product),
+        joinedload(Inventory.expected_shelf),
+        joinedload(Inventory.observed_shelf)
+    )
     if status:
         query = query.filter(Inventory.status == status)
     if shelf:
         query = query.join(Shelf, Inventory.expected_location_id == Shelf.id).filter(Shelf.shelf_code == shelf)
     
     items = query.all()
+
+    # Pre-fetch active discrepancies in 1 query to avoid N+1 queries
+    active_discs = db.query(Discrepancy).filter(
+        Discrepancy.status.in_(["NEW", "AI_ANALYZED", "PENDING_VERIFICATION", "ASSIGNED"])
+    ).all()
+    disc_map = {d.epc: d.id for d in active_discs}
+
     results = []
     for item in items:
-        # Check if item matches search keyword
         prod = item.product
+        if not prod:
+            continue
         if search:
             s_lower = search.lower()
             if (s_lower not in item.epc.lower()) and (s_lower not in prod.name.lower()) and (s_lower not in prod.sku.lower()):
                 continue
-
-        # Find active discrepancy id if any
-        disc = db.query(Discrepancy).filter(
-            Discrepancy.epc == item.epc,
-            Discrepancy.status.in_(["NEW", "AI_ANALYZED", "PENDING_VERIFICATION", "ASSIGNED"])
-        ).first()
 
         results.append(InventoryResponse(
             id=item.id,
@@ -65,7 +71,7 @@ def get_inventory(
             confidence=item.confidence,
             last_reconciled_at=item.last_reconciled_at,
             last_observed_at=item.last_observed_at,
-            discrepancy_id=disc.id if disc else None
+            discrepancy_id=disc_map.get(item.epc)
         ))
     return results
 

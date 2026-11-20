@@ -148,7 +148,7 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            2.1 Products & SKUs ({products.length})
+            Products & SKUs ({products.length})
           </button>
           <button
             onClick={() => { setActiveSubView('tags'); onNavigateSubPage?.('inventory-tags'); }}
@@ -158,7 +158,7 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            2.2 EPC / Tags ({items.length})
+            EPC / Tags ({items.length})
           </button>
           <button
             onClick={() => { setActiveSubView('layout'); onNavigateSubPage?.('inventory-layout'); }}
@@ -168,7 +168,7 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            2.3 Warehouse Layout
+            Warehouse Layout
           </button>
           <button
             onClick={() => { setActiveSubView('wms'); onNavigateSubPage?.('inventory-wms'); }}
@@ -178,7 +178,7 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            2.4 WMS & Sync
+            WMS & Sync
           </button>
           <button
             onClick={() => { setActiveSubView('history'); onNavigateSubPage?.('inventory-history'); }}
@@ -188,7 +188,7 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            2.5 Inventory History
+            Inventory History
           </button>
         </div>
 

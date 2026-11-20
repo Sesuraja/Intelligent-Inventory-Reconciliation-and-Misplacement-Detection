@@ -132,13 +132,13 @@ export const Header: React.FC<HeaderProps> = ({
               </h1>
               <div className="hidden 2xl:flex items-center space-x-1.5 ml-3">
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                  5 Main Navigation
+                  Autonomous AIoT
                 </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  24 Total Pages
+                  UHF Gen2 Matrix
                 </span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                  Modular & Scalable Design
+                  Real-Time Reconciled
                 </span>
               </div>
             </div>

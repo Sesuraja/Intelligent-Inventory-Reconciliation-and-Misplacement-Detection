@@ -87,7 +87,7 @@ export const AIExceptionsTab: React.FC<AIExceptionsTabProps> = ({
             }`}
           >
             <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-            <span>4.1 Discrepancies ({exceptions.length})</span>
+            <span>Discrepancies ({exceptions.length})</span>
           </button>
 
           <button
@@ -99,7 +99,7 @@ export const AIExceptionsTab: React.FC<AIExceptionsTabProps> = ({
             }`}
           >
             <Brain className="w-3.5 h-3.5 text-indigo-600" />
-            <span>4.2 Root Cause Analysis</span>
+            <span>Root Cause Analysis</span>
           </button>
 
           <button
@@ -111,7 +111,7 @@ export const AIExceptionsTab: React.FC<AIExceptionsTabProps> = ({
             }`}
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            <span>4.3 Verification & Actions</span>
+            <span>Verification & Actions</span>
           </button>
 
           <button
@@ -123,7 +123,7 @@ export const AIExceptionsTab: React.FC<AIExceptionsTabProps> = ({
             }`}
           >
             <Layers className="w-3.5 h-3.5 text-purple-600" />
-            <span>4.4 Session & Ground Truth</span>
+            <span>Session & Ground Truth</span>
           </button>
 
           <button
@@ -135,7 +135,7 @@ export const AIExceptionsTab: React.FC<AIExceptionsTabProps> = ({
             }`}
           >
             <Cpu className="w-3.5 h-3.5 text-blue-600" />
-            <span>4.5 AI Model Insights</span>
+            <span>AI Model Insights</span>
           </button>
         </div>
 

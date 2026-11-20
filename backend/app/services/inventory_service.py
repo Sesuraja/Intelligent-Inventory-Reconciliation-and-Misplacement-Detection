@@ -21,7 +21,7 @@ class InventoryService:
     @classmethod
     def get_dashboard_summary(cls, db: Session, force_refresh: bool = False) -> Dict[str, Any]:
         now_ts = time.time()
-        if not force_refresh and cls._cached_summary is not None and (now_ts - cls._cached_summary_ts) < 2.0:
+        if not force_refresh and cls._cached_summary is not None and (now_ts - cls._cached_summary_ts) < 4.0:
             return cls._cached_summary
 
         total_products = db.query(Product).count()

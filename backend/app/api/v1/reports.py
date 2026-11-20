@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
 from typing import Dict, Any, List, Optional
 import io
 import csv
@@ -69,13 +70,18 @@ def get_discrepancies_report(db: Session = Depends(get_db)):
 @router.get("/readers")
 def get_readers_report(db: Session = Depends(get_db)):
     """Hardware health, antenna port mappings, and real-time read event counts."""
-    readers = db.query(Reader).all()
+    readers = db.query(Reader).options(joinedload(Reader.antennas).joinedload(Antenna.shelf)).all()
     total_events = db.query(RFIDEvent).count()
+    
+    # Pre-aggregate event counts by antenna in 1 query
+    evt_rows = db.query(RFIDEvent.antenna_id, func.count(RFIDEvent.id)).group_by(RFIDEvent.antenna_id).all()
+    evt_map = {r[0]: r[1] for r in evt_rows}
+
     reader_data = []
     for r in readers:
         ant_stats = []
         for a in r.antennas:
-            evt_cnt = db.query(RFIDEvent).filter(RFIDEvent.antenna_id == a.id).count()
+            evt_cnt = evt_map.get(a.id, 0)
             ant_stats.append({
                 "antenna_code": a.antenna_code,
                 "port_number": a.port_number,
@@ -152,10 +158,16 @@ def get_audit_report(limit: int = 50, db: Session = Depends(get_db)):
 
 @router.get("/reconciliation")
 def get_reconciliation_report(db: Session = Depends(get_db)):
-    items = db.query(Inventory).all()
+    items = db.query(Inventory).options(
+        joinedload(Inventory.product),
+        joinedload(Inventory.expected_shelf),
+        joinedload(Inventory.observed_shelf)
+    ).all()
     rows = []
     for item in items:
         p = item.product
+        if not p:
+            continue
         rows.append({
             "epc": item.epc,
             "sku": p.sku,

@@ -23,6 +23,49 @@ function getBaseUrl(): string {
   return '/api/v1';
 }
 
+interface CacheEntry {
+  timestamp: number;
+  data: any;
+}
+
+const memoryCache = new Map<string, CacheEntry>();
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export function invalidateApiCache(pattern?: string) {
+  if (!pattern) {
+    memoryCache.clear();
+  } else {
+    for (const key of memoryCache.keys()) {
+      if (key.includes(pattern)) {
+        memoryCache.delete(key);
+      }
+    }
+  }
+}
+
+async function fetchCachedJSON<T>(endpoint: string, ttlMs: number = 10000): Promise<T> {
+  const cached = memoryCache.get(endpoint);
+  if (cached && (Date.now() - cached.timestamp) < ttlMs) {
+    return cached.data as T;
+  }
+  
+  if (inFlightRequests.has(endpoint)) {
+    return inFlightRequests.get(endpoint)! as Promise<T>;
+  }
+
+  const p = fetchJSON<T>(endpoint).then((data) => {
+    memoryCache.set(endpoint, { timestamp: Date.now(), data });
+    inFlightRequests.delete(endpoint);
+    return data;
+  }).catch((err) => {
+    inFlightRequests.delete(endpoint);
+    throw err;
+  });
+
+  inFlightRequests.set(endpoint, p);
+  return p;
+}
+
 async function fetchJSON<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('app_auth_token') : null;
   const baseUrl = getBaseUrl();
@@ -43,7 +86,7 @@ async function fetchJSON<T>(endpoint: string, options?: RequestInit): Promise<T>
 
 export const api = {
   // Dashboard
-  getDashboardSummary: () => fetchJSON<DashboardSummary>('/dashboard/summary'),
+  getDashboardSummary: () => fetchCachedJSON<DashboardSummary>('/dashboard/summary', 3000),
 
   // Inventory
   getInventory: (status?: string, shelf?: string, search?: string) => {
@@ -56,33 +99,46 @@ export const api = {
   getInventoryItem: (id: number) => fetchJSON<InventoryItem>(`/inventory/${id}`),
 
   // Products
-  getProducts: () => fetchJSON<ProductItem[]>('/products'),
-  createProduct: (data: Partial<ProductItem>) =>
-    fetchJSON<ProductItem>('/products', { method: 'POST', body: JSON.stringify(data) }),
+  getProducts: () => fetchCachedJSON<ProductItem[]>('/products', 15000),
+  createProduct: (data: Partial<ProductItem>) => {
+    invalidateApiCache('/products');
+    return fetchJSON<ProductItem>('/products', { method: 'POST', body: JSON.stringify(data) });
+  },
 
   // Tags
   getRFIDTags: () => fetchJSON<RFIDTagItem[]>('/rfid-tags'),
-  registerRFIDTag: (data: { epc: string; product_id: number; packaging_class: string }) =>
-    fetchJSON<RFIDTagItem>('/rfid-tags', { method: 'POST', body: JSON.stringify(data) }),
-  assignTagToProduct: (data: { epc: string; product_id: number; expected_shelf_id: number; packaging_class: string; tag_type?: string }) =>
-    fetchJSON<any>('/inventory/assign-tag', { method: 'POST', body: JSON.stringify(data) }),
+  registerRFIDTag: (data: { epc: string; product_id: number; packaging_class: string }) => {
+    invalidateApiCache();
+    return fetchJSON<RFIDTagItem>('/rfid-tags', { method: 'POST', body: JSON.stringify(data) });
+  },
+  assignTagToProduct: (data: { epc: string; product_id: number; expected_shelf_id: number; packaging_class: string; tag_type?: string }) => {
+    invalidateApiCache();
+    return fetchJSON<any>('/inventory/assign-tag', { method: 'POST', body: JSON.stringify(data) });
+  },
 
   // Movements
   getMovements: () => fetchJSON<any[]>('/movements'),
-  recordMovement: (data: { epc: string; to_shelf_id: number; movement_type: string; authorized_by: string; notes?: string }) =>
-    fetchJSON<any>('/movements', { method: 'POST', body: JSON.stringify(data) }),
+  recordMovement: (data: { epc: string; to_shelf_id: number; movement_type: string; authorized_by: string; notes?: string }) => {
+    invalidateApiCache();
+    return fetchJSON<any>('/movements', { method: 'POST', body: JSON.stringify(data) });
+  },
 
   // Locations
-  getShelves: () => fetchJSON<ShelfItem[]>('/locations/shelves'),
-  createShelf: (data: { shelf_code: string; name?: string; zone_id?: number; capacity?: number; category_restriction?: string }) =>
-    fetchJSON<ShelfItem>('/locations/shelves', { method: 'POST', body: JSON.stringify(data) }),
-  getLocations: () => fetchJSON<any[]>('/locations'),
+  getShelves: () => fetchCachedJSON<ShelfItem[]>('/locations/shelves', 15000),
+  createShelf: (data: { shelf_code: string; name?: string; zone_id?: number; capacity?: number; category_restriction?: string }) => {
+    invalidateApiCache('/locations');
+    return fetchJSON<ShelfItem>('/locations/shelves', { method: 'POST', body: JSON.stringify(data) });
+  },
+  getLocations: () => fetchCachedJSON<any[]>('/locations', 15000),
 
   // Readers & Antennas
-  getReaders: () => fetchJSON<ReaderItem[]>('/readers'),
-  getAntennas: () => fetchJSON<AntennaItem[]>('/antennas'),
-  assignAntenna: (data: { reader_id: number; port_number: number; shelf_id: number; antenna_code?: string; tx_power_dbm?: number; gain_dbi?: number; purpose?: string }) =>
-    fetchJSON<AntennaItem>('/readers/antennas/assign', { method: 'POST', body: JSON.stringify(data) }),
+  getReaders: () => fetchCachedJSON<ReaderItem[]>('/readers', 15000),
+  getAntennas: () => fetchCachedJSON<AntennaItem[]>('/antennas', 15000),
+  assignAntenna: (data: { reader_id: number; port_number: number; shelf_id: number; antenna_code?: string; tx_power_dbm?: number; gain_dbi?: number; purpose?: string }) => {
+    invalidateApiCache('/antennas');
+    invalidateApiCache('/readers');
+    return fetchJSON<AntennaItem>('/readers/antennas/assign', { method: 'POST', body: JSON.stringify(data) });
+  },
 
   // Events
   getRFIDEvents: (limit: number = 50) => fetchJSON<RFIDEvent[]>(`/rfid-events?limit=${limit}`),
@@ -96,14 +152,18 @@ export const api = {
     return fetchJSON<DiscrepancyItem[]>(`/exceptions?${params.toString()}`);
   },
   getExceptionDetails: (id: number) => fetchJSON<DiscrepancyItem>(`/exceptions/${id}`),
-  verifyException: (id: number, data: { verification_result: string; actual_location_id?: number | null; notes?: string; verified_by_name?: string }) =>
-    fetchJSON<any>(`/exceptions/${id}/verify`, { method: 'POST', body: JSON.stringify(data) }),
-  resolveException: (id: number, data: { resolution_action: string; notes?: string }) =>
-    fetchJSON<any>(`/exceptions/${id}/resolve`, { method: 'POST', body: JSON.stringify(data) }),
+  verifyException: (id: number, data: { verification_result: string; actual_location_id?: number | null; notes?: string; verified_by_name?: string }) => {
+    invalidateApiCache();
+    return fetchJSON<any>(`/exceptions/${id}/verify`, { method: 'POST', body: JSON.stringify(data) });
+  },
+  resolveException: (id: number, data: { resolution_action: string; notes?: string }) => {
+    invalidateApiCache();
+    return fetchJSON<any>(`/exceptions/${id}/resolve`, { method: 'POST', body: JSON.stringify(data) });
+  },
 
   // AI & Models
-  getAIModels: () => fetchJSON<AIModelItem[]>('/ai/models'),
-  getAIEvaluation: () => fetchJSON<any>('/ai/evaluation'),
+  getAIModels: () => fetchCachedJSON<AIModelItem[]>('/ai/models', 20000),
+  getAIEvaluation: () => fetchCachedJSON<any>('/ai/evaluation', 20000),
   retrainModel: (id: number) => fetchJSON<any>(`/ai/models/${id}/retrain`, { method: 'POST' }),
   getDemandForecast: () => fetchJSON<DemandForecastItem[]>('/ai/demand-forecast'),
   getCycleCountingPriorities: () => fetchJSON<CycleCountingItem[]>('/ai/cycle-counting'),

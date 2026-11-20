@@ -66,6 +66,8 @@ export function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const eventBufferRef = useRef<RFIDEvent[]>([]);
+  const flushTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     loadBaseData();
@@ -91,6 +93,9 @@ export function App() {
     return () => {
       window.removeEventListener('popstate', handlePopState);
       clearInterval(interval);
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+      }
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -158,7 +163,14 @@ export function App() {
         try {
           const payload = JSON.parse(event.data);
           if (payload.type === 'RFID_OBSERVATIONS' && payload.events) {
-            setLiveEvents((prev) => [...payload.events, ...prev.slice(0, 40)]);
+            // Buffer events and throttle root state updates to max once per 600ms
+            eventBufferRef.current = [...payload.events, ...eventBufferRef.current].slice(0, 50);
+            if (!flushTimerRef.current) {
+              flushTimerRef.current = window.setTimeout(() => {
+                setLiveEvents([...eventBufferRef.current]);
+                flushTimerRef.current = null;
+              }, 600);
+            }
           }
         } catch (e) {
           console.error('Error parsing WS message:', e);

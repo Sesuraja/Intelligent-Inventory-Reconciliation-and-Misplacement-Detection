@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from datetime import datetime
 
@@ -22,7 +22,12 @@ def get_exceptions(
     type: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Discrepancy)
+    query = db.query(Discrepancy).options(
+        joinedload(Discrepancy.inventory_item).joinedload(Inventory.product),
+        joinedload(Discrepancy.expected_shelf),
+        joinedload(Discrepancy.observed_shelf),
+        joinedload(Discrepancy.ai_predictions)
+    )
     if status and status != "ALL":
         query = query.filter(Discrepancy.status == status)
     elif not status:

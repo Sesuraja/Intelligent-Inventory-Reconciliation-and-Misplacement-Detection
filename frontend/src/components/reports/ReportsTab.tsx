@@ -76,7 +76,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPa
             }`}
           >
             <Layers className="w-3.5 h-3.5 text-blue-600" />
-            <span>5.1 Inventory Reconciliation</span>
+            <span>Inventory Reconciliation</span>
           </button>
 
           <button
@@ -88,7 +88,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPa
             }`}
           >
             <Cpu className="w-3.5 h-3.5 text-indigo-600" />
-            <span>5.2 Model Performance</span>
+            <span>Model Performance</span>
           </button>
 
           <button
@@ -100,7 +100,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPa
             }`}
           >
             <Server className="w-3.5 h-3.5 text-emerald-600" />
-            <span>5.3 Reader Performance</span>
+            <span>Reader Performance</span>
           </button>
 
           <button
@@ -112,7 +112,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPa
             }`}
           >
             <TrendingUp className="w-3.5 h-3.5 text-purple-600" />
-            <span>5.4 Cycle Count & Forecast</span>
+            <span>Cycle Count & Forecast</span>
           </button>
 
           <button
@@ -124,7 +124,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPa
             }`}
           >
             <Download className="w-3.5 h-3.5 text-slate-700" />
-            <span>5.5 Exports</span>
+            <span>Exports</span>
           </button>
         </div>
 
