@@ -126,6 +126,8 @@ class ModelRegistry:
         """Simulates retraining using verified ground-truth audit logs."""
         for m in self.models_meta:
             if m["id"] == model_id:
+                m["previous_version"] = m["version"]
+                m["version"] = f"{m['version']}-rev"
                 m["last_trained"] = datetime.now(timezone.utc).isoformat()
                 if "validation_samples" in m["metrics"]:
                     m["metrics"]["validation_samples"] += 25
@@ -135,5 +137,24 @@ class ModelRegistry:
                     "message": f"Successfully retrained {m['model_name']} with verified ground truth logs."
                 }
         return {"success": False, "message": "Model not found"}
+
+    def rollback_model(self, model_id: int) -> Dict[str, Any]:
+        """Reverts model version and weights to the previous checkpoint."""
+        for m in self.models_meta:
+            if m["id"] == model_id:
+                prev = m.get("previous_version", "v1.0.0")
+                curr = m["version"]
+                m["version"] = prev
+                m["previous_version"] = curr
+                m["last_trained"] = datetime.now(timezone.utc).isoformat()
+                return {
+                    "success": True,
+                    "model_id": model_id,
+                    "model_name": m["model_name"],
+                    "active_version": m["version"],
+                    "rolled_back_from": curr,
+                    "message": f"Model '{m['model_name']}' successfully rolled back to version {m['version']}."
+                }
+        return {"success": False, "message": f"Model ID {model_id} not found"}
 
 model_registry = ModelRegistry()

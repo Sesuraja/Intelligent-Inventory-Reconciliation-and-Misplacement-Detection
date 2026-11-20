@@ -33,6 +33,34 @@ def _migrate_schema():
                 col_names2 = [r[1] for r in res2]
                 if col_names2 and "source" not in col_names2:
                     conn.execute(text("ALTER TABLE observation_windows ADD COLUMN source VARCHAR(20) DEFAULT 'SIMULATION'"))
+
+                # Ensure rfid_tags columns exist
+                res_tags = conn.execute(text("PRAGMA table_info(rfid_tags)")).fetchall()
+                col_tags = [r[1] for r in res_tags]
+                if col_tags:
+                    if "pallet_id" not in col_tags:
+                        conn.execute(text("ALTER TABLE rfid_tags ADD COLUMN pallet_id VARCHAR(50)"))
+                    if "carton_id" not in col_tags:
+                        conn.execute(text("ALTER TABLE rfid_tags ADD COLUMN carton_id VARCHAR(50)"))
+                    if "retired_at" not in col_tags:
+                        conn.execute(text("ALTER TABLE rfid_tags ADD COLUMN retired_at DATETIME"))
+                    if "retirement_reason" not in col_tags:
+                        conn.execute(text("ALTER TABLE rfid_tags ADD COLUMN retirement_reason VARCHAR(255)"))
+
+                # Ensure wms_transactions columns exist
+                res_tx = conn.execute(text("PRAGMA table_info(wms_transactions)")).fetchall()
+                col_tx = [r[1] for r in res_tx]
+                if col_tx:
+                    if "is_reversed" not in col_tx:
+                        conn.execute(text("ALTER TABLE wms_transactions ADD COLUMN is_reversed BOOLEAN DEFAULT 0"))
+                    if "reversal_of_transaction_id" not in col_tx:
+                        conn.execute(text("ALTER TABLE wms_transactions ADD COLUMN reversal_of_transaction_id INTEGER"))
+                    if "approval_status" not in col_tx:
+                        conn.execute(text("ALTER TABLE wms_transactions ADD COLUMN approval_status VARCHAR(30) DEFAULT 'PENDING'"))
+                    if "approved_by" not in col_tx:
+                        conn.execute(text("ALTER TABLE wms_transactions ADD COLUMN approved_by VARCHAR(100)"))
+                    if "approved_at" not in col_tx:
+                        conn.execute(text("ALTER TABLE wms_transactions ADD COLUMN approved_at DATETIME"))
     except Exception as e:
         print(f"Schema migration notice: {e}")
 

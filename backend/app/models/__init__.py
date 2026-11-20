@@ -2,7 +2,7 @@ from app.core.database import Base
 from app.models.user import User, Role
 from app.models.location import Warehouse, Zone, Shelf, Bin
 from app.models.product import Product
-from app.models.rfid_tag import RFIDTag
+from app.models.rfid_tag import RFIDTag, TagAssignmentHistory
 from app.models.reader import Reader, Antenna, AntennaCalibration
 from app.models.inventory import Inventory, InventoryMovement
 from app.models.rfid_event import RFIDEvent, ObservationWindow

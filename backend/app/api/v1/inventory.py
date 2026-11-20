@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.models.inventory import Inventory, InventoryMovement
 from app.models.product import Product
-from app.models.rfid_tag import RFIDTag
+from app.models.rfid_tag import RFIDTag, TagAssignmentHistory
 from app.models.location import Shelf
 from app.models.discrepancy import Discrepancy
 from app.schemas.inventory import (
@@ -14,7 +14,7 @@ from app.schemas.inventory import (
     ProductResponse, ProductCreate,
     RFIDTagResponse, RFIDTagCreate,
     InventoryMovementResponse, InventoryMovementCreate,
-    AssignTagRequest
+    AssignTagRequest, TagRetireRequest, TagHistoryResponse
 )
 from app.rfid.reader_manager import reader_manager
 
@@ -177,9 +177,54 @@ def get_rfid_tags(db: Session = Depends(get_db)):
             status=t.status,
             tag_type=t.tag_type,
             packaging_class=t.packaging_class,
-            assigned_at=t.assigned_at
+            pallet_id=t.pallet_id,
+            carton_id=t.carton_id,
+            assigned_at=t.assigned_at,
+            retired_at=t.retired_at,
+            retirement_reason=t.retirement_reason
         ))
     return results
+
+@router.get("/rfid-tags/duplicates")
+def get_duplicate_tags(db: Session = Depends(get_db)):
+    """
+    Detects potential duplicate EPC mappings or cloned tags
+    reported across disparate antennas or recorded multiple times.
+    """
+    dup_discrepancies = db.query(Discrepancy).filter(
+        Discrepancy.discrepancy_type == "DUPLICATE_EPC",
+        Discrepancy.status.in_(["NEW", "AI_ANALYZED", "PENDING_VERIFICATION"])
+    ).all()
+    
+    tags = db.query(RFIDTag).filter(RFIDTag.status == "ACTIVE").all()
+    epc_counts: Dict[str, int] = {}
+    for t in tags:
+        epc_counts[t.epc] = epc_counts.get(t.epc, 0) + 1
+    
+    multi_epcs = [epc for epc, count in epc_counts.items() if count > 1]
+    
+    duplicates = []
+    for d in dup_discrepancies:
+        duplicates.append({
+            "epc": d.epc,
+            "type": "CROSS_ANTENNA_DUPLICATE",
+            "discrepancy_id": d.id,
+            "expected_shelf": d.expected_shelf.shelf_code if d.expected_shelf else "UNKNOWN",
+            "observed_shelf": d.observed_shelf.shelf_code if d.observed_shelf else "UNKNOWN",
+            "detected_at": d.detected_at,
+            "severity": d.severity
+        })
+    for epc in multi_epcs:
+        duplicates.append({
+            "epc": epc,
+            "type": "MULTI_REGISTERED_EPC",
+            "discrepancy_id": None,
+            "expected_shelf": "MULTI",
+            "observed_shelf": "MULTI",
+            "detected_at": datetime.now(timezone.utc),
+            "severity": "CRITICAL"
+        })
+    return duplicates
 
 @router.post("/rfid-tags", response_model=RFIDTagResponse)
 def register_rfid_tag(tag_in: RFIDTagCreate, db: Session = Depends(get_db)):
@@ -199,7 +244,11 @@ def register_rfid_tag(tag_in: RFIDTagCreate, db: Session = Depends(get_db)):
         status=tag.status,
         tag_type=tag.tag_type,
         packaging_class=tag.packaging_class,
-        assigned_at=tag.assigned_at
+        pallet_id=tag.pallet_id,
+        carton_id=tag.carton_id,
+        assigned_at=tag.assigned_at,
+        retired_at=tag.retired_at,
+        retirement_reason=tag.retirement_reason
     )
 
 @router.get("/rfid-tags/{id}", response_model=RFIDTagResponse)
@@ -216,7 +265,11 @@ def get_rfid_tag_by_id(id: int, db: Session = Depends(get_db)):
         status=tag.status,
         tag_type=tag.tag_type,
         packaging_class=tag.packaging_class,
-        assigned_at=tag.assigned_at
+        pallet_id=tag.pallet_id,
+        carton_id=tag.carton_id,
+        assigned_at=tag.assigned_at,
+        retired_at=tag.retired_at,
+        retirement_reason=tag.retirement_reason
     )
 
 @router.patch("/rfid-tags/{id}", response_model=RFIDTagResponse)
@@ -238,8 +291,77 @@ def update_rfid_tag(id: int, updates: Dict[str, Any], db: Session = Depends(get_
         status=tag.status,
         tag_type=tag.tag_type,
         packaging_class=tag.packaging_class,
-        assigned_at=tag.assigned_at
+        pallet_id=tag.pallet_id,
+        carton_id=tag.carton_id,
+        assigned_at=tag.assigned_at,
+        retired_at=tag.retired_at,
+        retirement_reason=tag.retirement_reason
     )
+
+@router.post("/rfid-tags/{epc}/retire")
+def retire_rfid_tag(epc: str, req: TagRetireRequest, db: Session = Depends(get_db)):
+    """
+    Retires an EPC tag due to damage, wear, or packaging decommissioning.
+    Marks tag as RETIRED, records audit history, and unlinks from active inventory.
+    """
+    clean_epc = epc.strip().upper()
+    tag = db.query(RFIDTag).filter(RFIDTag.epc == clean_epc).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail=f"RFID Tag with EPC {epc} not found")
+    
+    tag.status = "RETIRED"
+    tag.retired_at = datetime.now(timezone.utc)
+    tag.retirement_reason = req.reason
+
+    # Record history
+    history = TagAssignmentHistory(
+        epc=tag.epc,
+        previous_product_id=tag.product_id,
+        new_product_id=tag.product_id,
+        pallet_id=tag.pallet_id,
+        carton_id=tag.carton_id,
+        assigned_by=req.retired_by,
+        reason=f"RETIREMENT: {req.reason}",
+        timestamp=datetime.now(timezone.utc)
+    )
+    db.add(history)
+
+    # Update associated inventory record if active
+    inv = db.query(Inventory).filter(Inventory.epc == tag.epc).first()
+    if inv:
+        inv.status = "RETIRED"
+        inv.confidence = 0.0
+
+    db.commit()
+    return {
+        "success": True,
+        "epc": tag.epc,
+        "status": tag.status,
+        "retired_at": tag.retired_at,
+        "retirement_reason": tag.retirement_reason,
+        "message": f"Tag {tag.epc} has been safely retired."
+    }
+
+@router.get("/rfid-tags/{epc}/history", response_model=List[TagHistoryResponse])
+def get_tag_history(epc: str, db: Session = Depends(get_db)):
+    """Returns lifecycle assignment, pallet/carton associations, and transfer history for an EPC."""
+    clean_epc = epc.strip().upper()
+    histories = db.query(TagAssignmentHistory).filter(TagAssignmentHistory.epc == clean_epc).order_by(TagAssignmentHistory.timestamp.desc()).all()
+    
+    results = []
+    for h in histories:
+        results.append(TagHistoryResponse(
+            id=h.id,
+            epc=h.epc,
+            previous_product_name=h.previous_product.name if h.previous_product else None,
+            new_product_name=h.new_product.name if h.new_product else "UNKNOWN",
+            pallet_id=h.pallet_id,
+            carton_id=h.carton_id,
+            assigned_by=h.assigned_by,
+            reason=h.reason,
+            timestamp=h.timestamp
+        ))
+    return results
 
 @router.get("/inventory/movements", response_model=List[InventoryMovementResponse])
 def get_inventory_movements_alias(limit: int = 50, db: Session = Depends(get_db)):
@@ -318,13 +440,16 @@ def assign_tag_to_product(req: AssignTagRequest, db: Session = Depends(get_db)):
 
     # Create or update RFIDTag record
     tag = db.query(RFIDTag).filter(RFIDTag.epc == epc).first()
+    prev_prod_id = tag.product_id if tag else None
     if not tag:
         tag = RFIDTag(
             epc=epc,
             product_id=product.id,
             status=req.status,
             tag_type=req.tag_type,
-            packaging_class=req.packaging_class
+            packaging_class=req.packaging_class,
+            pallet_id=req.pallet_id,
+            carton_id=req.carton_id
         )
         db.add(tag)
     else:
@@ -332,6 +457,23 @@ def assign_tag_to_product(req: AssignTagRequest, db: Session = Depends(get_db)):
         tag.status = req.status
         tag.tag_type = req.tag_type
         tag.packaging_class = req.packaging_class
+        if req.pallet_id:
+            tag.pallet_id = req.pallet_id
+        if req.carton_id:
+            tag.carton_id = req.carton_id
+
+    # Record assignment history audit trail
+    history = TagAssignmentHistory(
+        epc=epc,
+        previous_product_id=prev_prod_id,
+        new_product_id=product.id,
+        pallet_id=req.pallet_id or (tag.pallet_id if tag else None),
+        carton_id=req.carton_id or (tag.carton_id if tag else None),
+        assigned_by=req.assigned_by,
+        reason=req.reason,
+        timestamp=datetime.now(timezone.utc)
+    )
+    db.add(history)
 
     # Create or update Inventory stock record
     inv = db.query(Inventory).filter(Inventory.epc == epc).first()

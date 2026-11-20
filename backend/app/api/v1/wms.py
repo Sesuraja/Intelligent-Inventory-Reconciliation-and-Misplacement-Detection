@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -10,6 +10,7 @@ from app.models.inventory import Inventory, InventoryMovement
 from app.models.product import Product
 from app.models.rfid_tag import RFIDTag
 from app.models.location import Shelf
+from app.models.discrepancy import Discrepancy
 from app.models.audit import AuditLog
 from app.rfid.reader_manager import reader_manager
 from app.schemas.wms import (
@@ -558,6 +559,165 @@ def get_wms_transactions(
             user_name=r.user_name,
             reference_code=r.reference_code,
             notes=r.notes,
+            is_reversed=r.is_reversed or False,
+            reversal_of_transaction_id=r.reversal_of_transaction_id,
+            approval_status=r.approval_status or "AUTO_APPROVED",
+            approved_by=r.approved_by,
+            approved_at=r.approved_at,
             timestamp=r.timestamp or datetime.now(timezone.utc)
         ))
     return results
+
+
+@router.post("/transactions/{id}/reverse")
+async def reverse_wms_transaction(
+    id: int,
+    user_name: Optional[str] = Query("Supervisor"),
+    reason: Optional[str] = Query("Manual rollback of incorrect transaction"),
+    db: Session = Depends(get_db)
+):
+    """
+    Rolls back an inventory movement or adjustment transaction, creating an immutable
+    audit trail compensation record and restoring previous expected shelf locations.
+    """
+    now = datetime.now(timezone.utc)
+    tx = db.query(WMSTransaction).filter(WMSTransaction.id == id).first()
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if tx.is_reversed:
+        raise HTTPException(status_code=400, detail="Transaction has already been reversed")
+
+    # Mark original transaction as reversed
+    tx.is_reversed = True
+
+    # Reverse physical and WMS expected shelves if an EPC is associated
+    if tx.epc and tx.from_shelf_id:
+        wms_item = db.query(WMSInventory).filter(WMSInventory.epc == tx.epc).first()
+        if wms_item:
+            wms_item.expected_shelf_id = tx.from_shelf_id
+            wms_item.updated_at = now
+
+        inv_item = db.query(Inventory).filter(Inventory.epc == tx.epc).first()
+        if inv_item:
+            inv_item.expected_location_id = tx.from_shelf_id
+            inv_item.last_reconciled_at = now
+
+    # Create compensating reversal transaction record
+    reversal_tx = WMSTransaction(
+        transaction_type=f"REVERSAL_{tx.transaction_type}",
+        epc=tx.epc,
+        sku=tx.sku,
+        from_shelf_id=tx.to_shelf_id,
+        to_shelf_id=tx.from_shelf_id,
+        quantity=tx.quantity,
+        user_name=user_name,
+        reference_code=f"REV-TX-{tx.id}",
+        notes=f"Reversal of TX #{tx.id}: {reason}",
+        is_reversed=False,
+        reversal_of_transaction_id=tx.id,
+        approval_status="APPROVED",
+        approved_by=user_name,
+        approved_at=now,
+        timestamp=now
+    )
+    db.add(reversal_tx)
+
+    # Add audit log
+    db.add(AuditLog(
+        action="TRANSACTION_REVERSED",
+        entity="WMS_TRANSACTION",
+        entity_id=str(tx.id),
+        details={
+            "reversed_transaction_id": tx.id,
+            "reversal_tx_type": reversal_tx.transaction_type,
+            "epc": tx.epc,
+            "restored_shelf_id": tx.from_shelf_id,
+            "operator": user_name,
+            "reason": reason
+        },
+        timestamp=now
+    ))
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Transaction #{id} ({tx.transaction_type}) successfully rolled back.",
+        "reversal_transaction_id": reversal_tx.id,
+        "restored_shelf_id": tx.from_shelf_id
+    }
+
+
+@router.post("/reconcile/approve")
+async def approve_wms_reconciliation(
+    payload: Dict[str, Any] = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Supervisor approval workflow for high-value or uncertain inventory reconciliations.
+    Updates official WMS records only when authorized by warehouse policy.
+    """
+    now = datetime.now(timezone.utc)
+    epc = payload.get("epc")
+    new_shelf_code = payload.get("new_shelf_code") or payload.get("approved_shelf_code")
+    approver = payload.get("approver") or payload.get("supervisor_name") or "Warehouse Supervisor"
+    notes = payload.get("notes", "Approved inventory re-alignment")
+
+    if not epc or not new_shelf_code:
+        raise HTTPException(status_code=400, detail="EPC and new_shelf_code are required")
+
+    shelf = db.query(Shelf).filter(Shelf.shelf_code == new_shelf_code).first()
+    if not shelf:
+        raise HTTPException(status_code=404, detail=f"Shelf '{new_shelf_code}' not found")
+
+    wms_item = db.query(WMSInventory).filter(WMSInventory.epc == epc).first()
+    if not wms_item:
+        raise HTTPException(status_code=404, detail=f"EPC '{epc}' not found in WMS catalog")
+
+    old_shelf_id = wms_item.expected_shelf_id
+    wms_item.expected_shelf_id = shelf.id
+    wms_item.updated_at = now
+
+    inv_item = db.query(Inventory).filter(Inventory.epc == epc).first()
+    if inv_item:
+        inv_item.expected_location_id = shelf.id
+        inv_item.status = "IN_PLACE"
+        inv_item.last_reconciled_at = now
+
+    # Record approved WMS transaction
+    tx = WMSTransaction(
+        transaction_type="RECONCILED_APPROVED",
+        epc=epc,
+        sku=wms_item.sku,
+        from_shelf_id=old_shelf_id,
+        to_shelf_id=shelf.id,
+        quantity=wms_item.quantity,
+        user_name=approver,
+        reference_code=f"REC-APP-{epc}",
+        notes=notes,
+        is_reversed=False,
+        approval_status="APPROVED",
+        approved_by=approver,
+        approved_at=now,
+        timestamp=now
+    )
+    db.add(tx)
+
+    # Resolve any pending discrepancy
+    discs = db.query(Discrepancy).filter(
+        Discrepancy.epc == epc,
+        Discrepancy.status.in_(["NEW", "AI_ANALYZED", "PENDING_VERIFICATION"])
+    ).all()
+    for d in discs:
+        d.status = "RESOLVED"
+        d.resolved_at = now
+
+    db.commit()
+
+    return {
+        "success": True,
+        "approved": True,
+        "message": f"Reconciliation for tag {epc} approved and officially synchronized.",
+        "transaction_id": tx.id,
+        "approved_by": approver,
+        "new_shelf_code": new_shelf_code
+    }

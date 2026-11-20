@@ -27,6 +27,8 @@ class RFIDTagBase(BaseModel):
     status: str = "ACTIVE"
     tag_type: str = "EPC_GEN2_UHF"
     packaging_class: str = "CARDBOARD"
+    pallet_id: Optional[str] = None
+    carton_id: Optional[str] = None
 
 class RFIDTagCreate(RFIDTagBase):
     pass
@@ -38,12 +40,36 @@ class AssignTagRequest(BaseModel):
     packaging_class: str = "CARDBOARD"
     tag_type: str = "EPC_GEN2_UHF"
     status: str = "ACTIVE"
+    pallet_id: Optional[str] = None
+    carton_id: Optional[str] = None
+    assigned_by: str = "Supervisor"
+    reason: str = "INITIAL_PROVISIONING"
+
+class TagRetireRequest(BaseModel):
+    reason: str = "DECOMMISSIONED"
+    retired_by: str = "Supervisor"
+
+class TagHistoryResponse(BaseModel):
+    id: int
+    epc: str
+    previous_product_name: Optional[str] = None
+    new_product_name: str
+    pallet_id: Optional[str] = None
+    carton_id: Optional[str] = None
+    assigned_by: str
+    reason: str
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
 
 class RFIDTagResponse(RFIDTagBase):
     id: int
     product_name: Optional[str] = None
     product_sku: Optional[str] = None
     assigned_at: datetime
+    retired_at: Optional[datetime] = None
+    retirement_reason: Optional[str] = None
 
     class Config:
         from_attributes = True

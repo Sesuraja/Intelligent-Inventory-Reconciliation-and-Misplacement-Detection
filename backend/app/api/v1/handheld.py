@@ -519,3 +519,111 @@ async def batch_sync_handheld_scans(
         "unique_epcs": session.unique_epcs,
         "status": session.status
     }
+
+
+@router.post("/shelf-qr/decode")
+def decode_shelf_qr(
+    payload: Dict[str, Any] = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Decodes shelf barcode/QR codes scanned by handheld devices (e.g. 'QR:SHELF:SHELF_A' or 'SHELF_A').
+    Validates physical location against warehouse schema, returns registered capacity,
+    expected SKU inventory, and active discrepancy alerts for ground-truth verification.
+    """
+    raw = payload.get("qr_payload") or payload.get("qr_raw_payload") or ""
+    code = str(raw).strip().upper()
+    matched_code = None
+    all_shelves = db.query(Shelf).all()
+    shelf_map = {s.shelf_code.upper(): s for s in all_shelves}
+
+    if code in shelf_map:
+        matched_code = code
+    else:
+        # Check tokens separated by : or / or -
+        parts = [p.strip() for p in code.replace(":", " ").replace("/", " ").replace("-", " ").split()]
+        for p in parts:
+            if p in shelf_map:
+                matched_code = p
+                break
+            alt = f"SHELF_{p}"
+            if alt in shelf_map:
+                matched_code = alt
+                break
+        if not matched_code:
+            for sc in shelf_map:
+                if sc in code:
+                    matched_code = sc
+                    break
+
+    if not matched_code or matched_code not in shelf_map:
+        return {
+            "valid": False,
+            "success": False,
+            "message": f"Scanned QR '{raw}' does not match any registered warehouse shelf."
+        }
+
+    shelf = shelf_map[matched_code]
+    expected_items = db.query(Inventory).filter(Inventory.expected_location_id == shelf.id).all()
+    active_discs = db.query(Discrepancy).filter(
+        Discrepancy.expected_location_id == shelf.id,
+        Discrepancy.status.in_(["NEW", "AI_ANALYZED", "PENDING_VERIFICATION"])
+    ).all()
+
+    return {
+        "valid": True,
+        "success": True,
+        "shelf_id": shelf.id,
+        "shelf_code": shelf.shelf_code,
+        "name": shelf.name,
+        "zone_name": shelf.zone.name if shelf.zone else "Zone A",
+        "capacity": shelf.capacity,
+        "current_item_count": len(expected_items),
+        "open_discrepancies_count": len(active_discs),
+        "expected_epcs": [item.epc for item in expected_items],
+        "discrepancies": [
+            {
+                "id": d.id,
+                "epc": d.epc,
+                "type": d.discrepancy_type,
+                "confidence": d.confidence
+            }
+            for d in active_discs
+        ]
+    }
+
+
+@router.get("/verification/history")
+def get_verification_history(
+    limit: int = Query(50, le=200),
+    shelf_code: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns complete historical audit log of physical ground-truth verifications performed by handheld scanners.
+    """
+    query = db.query(GroundTruthVerification)
+    if status and status != "ALL":
+        query = query.filter(GroundTruthVerification.verification_status == status)
+
+    records = query.order_by(GroundTruthVerification.id.desc()).limit(limit).all()
+    results = []
+    for r in records:
+        if shelf_code and r.verified_shelf and r.verified_shelf.shelf_code != shelf_code:
+            continue
+        results.append({
+            "id": r.id,
+            "discrepancy_id": r.discrepancy_id,
+            "epc": r.epc,
+            "expected_shelf": r.expected_shelf.shelf_code if r.expected_shelf else None,
+            "ai_predicted_shelf": r.ai_predicted_shelf.shelf_code if r.ai_predicted_shelf else None,
+            "verified_shelf": r.verified_shelf.shelf_code if r.verified_shelf else None,
+            "verification_status": r.verification_status,
+            "verified_by": r.verified_by,
+            "device_code": r.device_code,
+            "barcode_matched": r.barcode_matched,
+            "notes": r.notes,
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None
+        })
+    return results

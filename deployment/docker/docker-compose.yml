@@ -54,6 +54,28 @@ services:
       retries: 3
       start_period: 15s
 
+  # ============================================================================
+  # Service 3: Node.js RFID Edge Collector (LLRP over TCP / REST & MQTT forwarder)
+  # ============================================================================
+  edge-collector:
+    build:
+      context: ../../edge-collector
+      dockerfile: Dockerfile
+    container_name: inventory_rfid_edge_collector
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      READER_HOST: "${RFID_READER_HOST:-192.168.1.100}"
+      READER_PORT: "${RFID_READER_PORT:-5084}"
+      READER_ID: "READER_01"
+      OPERATING_MODE: "${OPERATING_MODE:-SIMULATION}"
+      BACKEND_API_URL: "http://app:8000/api/v1/rfid-events/ingest"
+      BATCH_SIZE: "50"
+      FLUSH_INTERVAL_MS: "600"
+      DEBOUNCE_WINDOW_MS: "400"
+
 volumes:
   postgres_data:
     driver: local

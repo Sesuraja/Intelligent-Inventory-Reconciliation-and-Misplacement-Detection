@@ -63,8 +63,14 @@ class WMSTransaction(Base):
     user_name = Column(String(100), default="WMS_OPERATOR")
     reference_code = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
+    is_reversed = Column(Boolean, default=False)
+    reversal_of_transaction_id = Column(Integer, ForeignKey("wms_transactions.id"), nullable=True)
+    approval_status = Column(String(50), default="AUTO_APPROVED")  # PENDING_APPROVAL, APPROVED, REJECTED, AUTO_APPROVED
+    approved_by = Column(String(100), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     from_shelf = relationship("Shelf", foreign_keys=[from_shelf_id])
     to_shelf = relationship("Shelf", foreign_keys=[to_shelf_id])
     order = relationship("WMSOrder", back_populates="transactions")
+    reversal_of = relationship("WMSTransaction", remote_side=[id], foreign_keys=[reversal_of_transaction_id])

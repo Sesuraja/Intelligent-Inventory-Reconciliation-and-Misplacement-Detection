@@ -1,0 +1,21 @@
+{
+  "name": "rfid-edge-collector",
+  "version": "1.0.0",
+  "description": "Autonomous AIoT RFID Edge Collector: LLRP over TCP/IP, Event Normalization, Local Buffering and Forwarding",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "keywords": ["rfid", "llrp", "aiot", "edge", "inventory"],
+  "author": "Warehouse AIoT Team",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}

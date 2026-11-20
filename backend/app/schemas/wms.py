@@ -72,6 +72,11 @@ class WMSTransactionResponse(BaseModel):
     user_name: str
     reference_code: Optional[str]
     notes: Optional[str]
+    is_reversed: bool = False
+    reversal_of_transaction_id: Optional[int] = None
+    approval_status: str = "AUTO_APPROVED"
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
     timestamp: datetime
 
     class Config:

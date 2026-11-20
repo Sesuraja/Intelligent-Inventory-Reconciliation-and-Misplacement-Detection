@@ -184,3 +184,121 @@ def test_wms_sandbox_full_lifecycle():
     types = [t["transaction_type"] for t in txs]
     assert "RECEIPT" in types
     assert "PUTAWAY" in types
+
+
+def test_qr_shelf_decode_and_verification_history():
+    # 1. Test valid shelf QR decode
+    res_qr = client.post("/api/v1/handheld/shelf-qr/decode", json={
+        "qr_raw_payload": "SHELF-QR:SHELF_B:ZONE_A:AISLE_02"
+    })
+    assert res_qr.status_code == 200
+    qr_data = res_qr.json()
+    assert qr_data["valid"] is True
+    assert qr_data["shelf_code"] == "SHELF_B"
+
+    # 2. Test invalid shelf QR decode
+    res_bad = client.post("/api/v1/handheld/shelf-qr/decode", json={
+        "qr_raw_payload": "INVALID_RANDOM_CODE"
+    })
+    assert res_bad.status_code == 200
+    assert res_bad.json()["valid"] is False
+
+    # 3. Test verification history endpoint
+    res_hist = client.get("/api/v1/handheld/verification/history?limit=10")
+    assert res_hist.status_code == 200
+    assert isinstance(res_hist.json(), list)
+
+
+def test_wms_transaction_reversal_and_approval():
+    # 1. Fetch transactions to find one to reverse
+    res_tx = client.get("/api/v1/wms/transactions?limit=1")
+    assert res_tx.status_code == 200
+    txs = res_tx.json()
+    if txs:
+        target_tx_id = txs[0]["id"]
+        # Reverse transaction
+        res_rev = client.post(f"/api/v1/wms/transactions/{target_tx_id}/reverse", json={
+            "reversed_by": "Test Supervisor",
+            "reason": "Test reversal audit"
+        })
+        assert res_rev.status_code in [200, 400]
+        if res_rev.status_code == 200:
+            assert res_rev.json()["success"] is True
+
+    # 2. Reconcile approve
+    res_app = client.post("/api/v1/wms/reconcile/approve", json={
+        "epc": "EPC-9001",
+        "action": "ACCEPT_LOCATION",
+        "approved_shelf_code": "SHELF_A",
+        "supervisor_name": "Senior Supervisor",
+        "notes": "Approved test reconciliation"
+    })
+    assert res_app.status_code == 200
+    assert res_app.json()["approved"] is True
+
+
+def test_rfid_tag_retirement_hierarchy_and_history():
+    # 1. Assign tag with pallet and carton hierarchy
+    res_assign = client.post("/api/v1/inventory/assign-tag", json={
+        "epc": "EPC-HIERARCHY-01",
+        "product_id": 1,
+        "expected_shelf_id": 1,
+        "packaging_class": "CARDBOARD",
+        "pallet_id": "PALLET-X100",
+        "carton_id": "CARTON-C500",
+        "assigned_by": "Warehouse Supervisor",
+        "reason": "Initial pallet breakdown"
+    })
+    assert res_assign.status_code == 200
+    assert res_assign.json()["success"] is True
+
+    # 2. Check tag history
+    res_hist = client.get("/api/v1/rfid-tags/EPC-HIERARCHY-01/history")
+    assert res_hist.status_code == 200
+    hist = res_hist.json()
+    assert len(hist) >= 1
+    assert hist[0]["pallet_id"] == "PALLET-X100"
+    assert hist[0]["carton_id"] == "CARTON-C500"
+
+    # 3. Check duplicate EPC endpoint
+    res_dups = client.get("/api/v1/rfid-tags/duplicates")
+    assert res_dups.status_code == 200
+    assert isinstance(res_dups.json(), list)
+
+    # 4. Retire tag
+    res_ret = client.post("/api/v1/rfid-tags/EPC-HIERARCHY-01/retire", json={
+        "reason": "Damaged RFID inlay during handling",
+        "retired_by": "Senior QA"
+    })
+    assert res_ret.status_code == 200
+    assert res_ret.json()["status"] == "RETIRED"
+
+
+def test_comprehensive_system_health():
+    res = client.get("/api/v1/system/health/comprehensive")
+    assert res.status_code == 200
+    data = res.json()
+    assert "overall_status" in data
+    assert "reader" in data
+    assert "antennas" in data
+    assert len(data["antennas"]) >= 1
+    assert "edge_collector" in data
+    assert "data_quality_index" in data
+    assert data["data_quality_index"]["overall_score"] > 0.8
+
+
+def test_model_rollback_and_evaluation_metrics():
+    # 1. Rollback model
+    res_rb = client.post("/api/v1/ai/models/1/rollback")
+    assert res_rb.status_code == 200
+    assert res_rb.json()["success"] is True
+
+    # 2. Get evaluation report with advanced metrics
+    res_eval = client.get("/api/v1/ai/evaluation")
+    assert res_eval.status_code == 200
+    eval_data = res_eval.json()
+    assert "false_absence_rate" in eval_data
+    assert "per_shelf_performance" in eval_data
+    assert "confusion_matrix" in eval_data
+    assert "calibration_reliability_curve" in eval_data
+
