@@ -139,6 +139,15 @@ def update_product(id: int, updates: Dict[str, Any], db: Session = Depends(get_d
     db.refresh(prod)
     return prod
 
+@router.delete("/products/{id}")
+def delete_product(id: int, db: Session = Depends(get_db)):
+    prod = db.query(Product).filter(Product.id == id).first()
+    if not prod:
+        raise HTTPException(status_code=404, detail="Product not found")
+    db.delete(prod)
+    db.commit()
+    return {"success": True, "message": f"Product {id} deleted successfully"}
+
 @router.post("/products/import")
 def bulk_import_products(items: List[ProductCreate], db: Session = Depends(get_db)):
     """Bulk import products with SKU de-duplication."""

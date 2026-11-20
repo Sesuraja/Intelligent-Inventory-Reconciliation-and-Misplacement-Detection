@@ -249,6 +249,18 @@ export const api = {
 
   // Auth & System Administration
   getUsers: () => fetchJSON<any[]>('/auth/users'),
+  createUser: (data: { name: string; email: string; role: string; password?: string }) => {
+    invalidateApiCache();
+    return fetchJSON<any>('/auth/users', { method: 'POST', body: JSON.stringify(data) });
+  },
+  updateUser: (id: number, updates: { name?: string; email?: string; role?: string }) => {
+    invalidateApiCache();
+    return fetchJSON<any>(`/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+  },
+  deleteUser: (id: number) => {
+    invalidateApiCache();
+    return fetchJSON<any>(`/auth/users/${id}`, { method: 'DELETE' });
+  },
   getMe: () => fetchJSON<any>('/auth/me'),
   login: async (email: string, pass: string) => {
     const formData = new URLSearchParams();
@@ -262,6 +274,32 @@ export const api = {
     });
     if (!res.ok) throw new Error('Authentication failed');
     return res.json();
+  },
+  updateProduct: (id: number, updates: Partial<ProductItem>) => {
+    invalidateApiCache('/products');
+    return fetchJSON<ProductItem>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+  },
+  deleteProduct: (id: number) => {
+    invalidateApiCache('/products');
+    return fetchJSON<any>(`/products/${id}`, { method: 'DELETE' });
+  },
+  updateShelf: (id: number, updates: Partial<ShelfItem>) => {
+    invalidateApiCache('/locations/shelves');
+    invalidateApiCache('/shelves');
+    return fetchJSON<ShelfItem>(`/locations/shelves/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+  },
+  deleteShelf: (id: number) => {
+    invalidateApiCache('/locations/shelves');
+    invalidateApiCache('/shelves');
+    return fetchJSON<any>(`/locations/shelves/${id}`, { method: 'DELETE' });
+  },
+  updateReader: (id: number, updates: Partial<ReaderItem>) => {
+    invalidateApiCache('/readers');
+    return fetchJSON<ReaderItem>(`/readers/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+  },
+  updateAntenna: (id: number, updates: Partial<AntennaItem>) => {
+    invalidateApiCache('/antennas');
+    return fetchJSON<AntennaItem>(`/antennas/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
   },
   getSystemSettings: () => fetchJSON<any>('/system/settings'),
   updateSystemSettings: (data: any) =>

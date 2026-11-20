@@ -21,7 +21,7 @@ export const HelpDocsView: React.FC = () => {
         <div>
           <div className="flex items-center space-x-2">
             <BookOpen className="w-5 h-5 text-blue-600" />
-            <h3 className="text-base font-bold text-slate-900">S3. Help, Documentation & System Architecture</h3>
+            <h3 className="text-base font-bold text-slate-900">Help, Documentation & System Architecture</h3>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
               Technical Reference
             </span>
@@ -104,7 +104,7 @@ export const HelpDocsView: React.FC = () => {
             <li>Connect reader Ethernet cable to local warehouse LAN on subnet `192.168.1.0/24`.</li>
             <li>Configure static IP address `192.168.1.100` and default LLRP port `5084`.</li>
             <li>Connect Antenna 1 (Shelf A), Antenna 2 (Shelf B), Antenna 3 (Shelf C), Antenna 4 (Shelf D).</li>
-            <li>Navigate to <strong>3.1 Reader & Antenna Status</strong> and click <strong>Probe Physical Reader (LLRP/TCP)</strong>.</li>
+            <li>Navigate to <strong>Reader & Antenna Status</strong> and click <strong>Probe Physical Reader (LLRP/TCP)</strong>.</li>
             <li>The system will discover reader capabilities and automatically switch from SIMULATION to PHYSICAL mode.</li>
           </ol>
         </div>

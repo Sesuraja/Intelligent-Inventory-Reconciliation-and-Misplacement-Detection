@@ -30,16 +30,19 @@ import {
 import { DashboardSummary, NavigationTab } from '../../types';
 import { LoadingState } from '../common/LoadingState';
 import { useAppSettings } from '../../context/SettingsContext';
+import { SlidersHorizontal } from 'lucide-react';
 
 interface DashboardTabProps {
   summary: DashboardSummary | null;
   onNavigateTab: (tab: NavigationTab, filter?: string) => void;
   onSelectDiscrepancy: (discrepancyId: number) => void;
+  onOpenSettings?: () => void;
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({
   summary,
-  onNavigateTab
+  onNavigateTab,
+  onOpenSettings
 }) => {
   const { settings } = useAppSettings();
 
@@ -65,22 +68,34 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
         <div>
           <div className="flex items-center space-x-2">
             <span className={`w-2.5 h-2.5 rounded-full ${readerOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight">{settings.companyName || 'Main Logistics Distribution Facility #4'}</h2>
+            <h2 className="text-lg font-bold text-slate-900 tracking-tight">{settings.companyName || 'Main Logistics Distribution Facility'}</h2>
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200">
+              {settings.facilityCode || 'FAC-01'}
+            </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Automatic UHF RFID inventory reconciliation running with Scikit-learn AI location inference and root-cause diagnostics.
+            {settings.brandName || 'Inventory AIoT'} • Real-time UHF RFID reconciliation with Scikit-learn AI location inference.
           </p>
         </div>
 
-        <div className="flex items-center space-x-3 text-xs">
+        <div className="flex flex-wrap items-center gap-2.5 text-xs">
           <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center space-x-2">
             <Server className={`w-4 h-4 ${readerOnline ? 'text-emerald-600' : 'text-rose-600'}`} />
-            <span className="font-mono font-medium">READER_01: {readerOnline ? 'ONLINE' : 'OUTAGE'}</span>
+            <span className="font-mono font-medium">READER: {readerOnline ? 'ONLINE' : 'OUTAGE'}</span>
           </div>
           <div className="px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 font-semibold flex items-center space-x-1.5">
             <Radio className="w-4 h-4 text-blue-600" />
             <span>4 Ports Active</span>
           </div>
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition flex items-center space-x-1.5"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+              <span>Customize</span>
+            </button>
+          )}
         </div>
       </div>
 

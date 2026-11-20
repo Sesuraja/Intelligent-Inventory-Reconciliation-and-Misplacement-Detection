@@ -276,6 +276,7 @@ export function App() {
               summary={summary}
               onNavigateTab={(tab, filter) => handleNavigateTab(tab, undefined, filter)}
               onSelectDiscrepancy={(id) => handleNavigateTab('exceptions', 'exceptions-discrepancies')}
+              onOpenSettings={handleOpenSettings}
             />
           )}
 

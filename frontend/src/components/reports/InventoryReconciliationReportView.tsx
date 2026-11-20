@@ -57,7 +57,7 @@ export const InventoryReconciliationReportView: React.FC<InventoryReconciliation
         <div>
           <div className="flex items-center space-x-2">
             <Layers className="w-5 h-5 text-blue-600" />
-            <h3 className="text-base font-bold text-slate-900">5.1 Inventory Reconciliation Ledger</h3>
+            <h3 className="text-base font-bold text-slate-900">Inventory Reconciliation Ledger</h3>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
               Autonomous Discrepancy Reconciliation
             </span>

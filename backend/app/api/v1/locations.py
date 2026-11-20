@@ -121,6 +121,46 @@ def create_shelf(shelf_in: ShelfCreate, db: Session = Depends(get_db)):
         assigned_antenna_code=None
     )
 
+@router.patch("/shelves/{id}", response_model=ShelfResponse)
+@router.patch("/locations/shelves/{id}", response_model=ShelfResponse)
+def update_shelf(id: int, updates: dict, db: Session = Depends(get_db)):
+    """Updates shelf configuration and capacity dynamically."""
+    shelf = db.query(Shelf).filter(Shelf.id == id).first()
+    if not shelf:
+        raise HTTPException(status_code=404, detail="Shelf not found")
+    for key, val in updates.items():
+        if hasattr(shelf, key) and key != "id":
+            if key == "shelf_code" and isinstance(val, str):
+                val = val.upper()
+            setattr(shelf, key, val)
+    db.commit()
+    db.refresh(shelf)
+    curr_count = db.query(Inventory).filter(Inventory.expected_location_id == shelf.id).count()
+    ant = db.query(Antenna).filter(Antenna.shelf_id == shelf.id).first()
+    return ShelfResponse(
+        id=shelf.id,
+        zone_id=shelf.zone_id,
+        shelf_code=shelf.shelf_code,
+        name=shelf.name,
+        capacity=shelf.capacity,
+        category_restriction=shelf.category_restriction,
+        coord_x=shelf.coord_x,
+        coord_y=shelf.coord_y,
+        current_items_count=curr_count,
+        assigned_antenna_code=ant.antenna_code if ant else None
+    )
+
+@router.delete("/shelves/{id}")
+@router.delete("/locations/shelves/{id}")
+def delete_shelf(id: int, db: Session = Depends(get_db)):
+    """Deletes a warehouse shelf."""
+    shelf = db.query(Shelf).filter(Shelf.id == id).first()
+    if not shelf:
+        raise HTTPException(status_code=404, detail="Shelf not found")
+    db.delete(shelf)
+    db.commit()
+    return {"success": True, "message": f"Shelf {id} deleted successfully"}
+
 @router.get("/zones")
 def get_zones(db: Session = Depends(get_db)):
     zones = db.query(Zone).all()

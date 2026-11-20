@@ -116,7 +116,7 @@ export const ReaderAntennaStatusView: React.FC<ReaderAntennaStatusViewProps> = (
         <div>
           <div className="flex items-center space-x-2">
             <Radio className="w-5 h-5 text-blue-600" />
-            <h3 className="text-base font-bold text-slate-900">3.1 Reader & Antenna Status</h3>
+            <h3 className="text-base font-bold text-slate-900">Reader & Antenna Status</h3>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
               Impinj LLRP v1.0.1
             </span>

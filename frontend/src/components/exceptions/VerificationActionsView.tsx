@@ -87,7 +87,7 @@ export const VerificationActionsView: React.FC<VerificationActionsViewProps> = (
         <div>
           <div className="flex items-center space-x-2">
             <ShieldCheck className="w-5 h-5 text-emerald-600" />
-            <h3 className="text-base font-bold text-slate-900">4.3 Verification & Action Management</h3>
+            <h3 className="text-base font-bold text-slate-900">Verification & Action Management</h3>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
               Closed-Loop Reconciliation
             </span>

@@ -36,7 +36,7 @@ export const ModelPerformanceReportView: React.FC<ModelPerformanceReportViewProp
         <div>
           <div className="flex items-center space-x-2">
             <Cpu className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-base font-bold text-slate-900">5.2 AI Model Performance & Confusion Matrix</h3>
+            <h3 className="text-base font-bold text-slate-900">AI Model Performance & Confusion Matrix</h3>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
               Cross-Validated Offline Benchmark
             </span>

@@ -136,3 +136,81 @@ def get_users(db: Session = Depends(get_db)):
         }
         for u in users
     ]
+
+@router.post("/users")
+def create_user(data: Dict[str, Any], db: Session = Depends(get_db)):
+    """Creates a new warehouse user with role-based authorization."""
+    email = data.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="User with this email already exists")
+    
+    role_name = data.get("role", "Warehouse Operator")
+    from app.models.user import Role
+    role = db.query(Role).filter(Role.role_name == role_name).first()
+    if not role:
+        role = Role(role_name=role_name, description=f"{role_name} Access")
+        db.add(role)
+        db.commit()
+        db.refresh(role)
+
+    from app.core.security import get_password_hash
+    pwd = data.get("password", "Warehouse123!")
+    user = User(
+        name=data.get("name", email.split("@")[0]),
+        email=email,
+        password_hash=get_password_hash(pwd),
+        role_id=role.id
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": role.role_name,
+        "created_at": user.created_at.isoformat() if user.created_at else None
+    }
+
+@router.patch("/users/{id}")
+def update_user(id: int, updates: Dict[str, Any], db: Session = Depends(get_db)):
+    """Updates user properties and permissions."""
+    user = db.query(User).filter(User.id == id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if "name" in updates:
+        user.name = updates["name"]
+    if "email" in updates:
+        user.email = updates["email"]
+    if "role" in updates:
+        from app.models.user import Role
+        role_name = updates["role"]
+        role = db.query(Role).filter(Role.role_name == role_name).first()
+        if not role:
+            role = Role(role_name=role_name, description=f"{role_name} Access")
+            db.add(role)
+            db.commit()
+            db.refresh(role)
+        user.role_id = role.id
+    db.commit()
+    db.refresh(user)
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role.role_name if user.role else "Warehouse Operator"
+    }
+
+@router.delete("/users/{id}")
+def delete_user(id: int, db: Session = Depends(get_db)):
+    """Deletes a user account."""
+    user = db.query(User).filter(User.id == id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(user)
+    db.commit()
+    return {"success": True, "message": f"User {id} deleted successfully"}
+

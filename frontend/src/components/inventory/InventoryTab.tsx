@@ -24,10 +24,13 @@ import { EmptyState } from '../common/EmptyState';
 import { CreateShelfModal } from './CreateShelfModal';
 import { AssignTagModal } from './AssignTagModal';
 import { CreateProductModal } from './CreateProductModal';
+import { EditProductModal } from './EditProductModal';
+import { EditShelfModal } from './EditShelfModal';
 import { WMSSandboxView } from './WMSSandboxView';
 import { WarehouseLayoutView } from './WarehouseLayoutView';
 import { InventoryHistoryView } from './InventoryHistoryView';
 import { useAppSettings } from '../../context/SettingsContext';
+import { Edit2, Trash2 } from 'lucide-react';
 
 interface InventoryTabProps {
   subPage?: string;
@@ -62,11 +65,23 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
   const [showCreateShelfModal, setShowCreateShelfModal] = useState(false);
   const [showAssignTagModal, setShowAssignTagModal] = useState(false);
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
+  const [editingShelf, setEditingShelf] = useState<ShelfItem | null>(null);
 
   // Movement Modal State
   const [moveEpc, setMoveEpc] = useState('');
   const [targetShelfId, setTargetShelfId] = useState<number>(1);
   const [moveNotes, setMoveNotes] = useState('');
+
+  const handleDeleteProduct = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this master product?')) return;
+    try {
+      await api.deleteProduct(id);
+      loadData();
+    } catch (err: any) {
+      alert(`Error deleting product: ${err.message}`);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -337,7 +352,21 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                               {boundTags.length} Serialized Tags
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-right">
+                          <td className="py-3 px-4 text-right space-x-1.5">
+                            <button
+                              onClick={() => setEditingProduct(p)}
+                              className="p-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-500 rounded-lg transition"
+                              title="Edit Master SKU"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProduct(p.id)}
+                              className="p-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-500 rounded-lg transition"
+                              title="Delete Master SKU"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() => setShowAssignTagModal(true)}
                               className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-semibold transition"
@@ -492,12 +521,13 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
         </div>
       )}
 
-      {/* View: 2.3 Warehouse Layout */}
+      {/* View: Warehouse Layout */}
       {activeSubView === 'layout' && (
         <WarehouseLayoutView
           shelves={shelves}
           items={items}
           antennas={antennas}
+          onEditShelf={(s) => setEditingShelf(s)}
         />
       )}
 
@@ -605,6 +635,22 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
         onSuccess={loadData}
         products={products}
         shelves={shelves}
+      />
+
+      {/* Edit Product Modal */}
+      <EditProductModal
+        isOpen={!!editingProduct}
+        onClose={() => setEditingProduct(null)}
+        onSuccess={loadData}
+        product={editingProduct}
+      />
+
+      {/* Edit Shelf Modal */}
+      <EditShelfModal
+        isOpen={!!editingShelf}
+        onClose={() => setEditingShelf(null)}
+        onSuccess={loadData}
+        shelf={editingShelf}
       />
 
     </div>
