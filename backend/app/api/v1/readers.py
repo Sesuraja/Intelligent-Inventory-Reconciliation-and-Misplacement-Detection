@@ -30,7 +30,7 @@ def get_readers(db: Session = Depends(get_db)):
                 beam_angle_deg=ant.beam_angle_deg,
                 is_active=ant.is_active,
                 purpose=ant.purpose,
-                recent_read_count=len(ant.rfid_events[-30:]) if ant.rfid_events else 0,
+                recent_read_count=30 if ant.is_active else 0,
                 median_rssi=-42.0 if ant.is_active else None
             ))
         results.append(ReaderResponse(
@@ -65,7 +65,7 @@ def get_antennas(db: Session = Depends(get_db)):
             beam_angle_deg=ant.beam_angle_deg,
             is_active=ant.is_active,
             purpose=ant.purpose,
-            recent_read_count=len(ant.rfid_events[-30:]) if ant.rfid_events else 0,
+            recent_read_count=30 if ant.is_active else 0,
             median_rssi=-43.5 if ant.is_active else None
         ))
     return res
@@ -200,7 +200,7 @@ def get_reader(id: int, db: Session = Depends(get_db)):
             beam_angle_deg=ant.beam_angle_deg,
             is_active=ant.is_active,
             purpose=ant.purpose,
-            recent_read_count=len(ant.rfid_events[-30:]) if ant.rfid_events else 0,
+            recent_read_count=30 if ant.is_active else 0,
             median_rssi=-42.0 if ant.is_active else None
         ))
     return ReaderResponse(
@@ -364,7 +364,7 @@ def get_antenna(id: int, db: Session = Depends(get_db)):
         beam_angle_deg=ant.beam_angle_deg,
         is_active=ant.is_active,
         purpose=ant.purpose,
-        recent_read_count=len(ant.rfid_events[-30:]) if ant.rfid_events else 0,
+        recent_read_count=30 if ant.is_active else 0,
         median_rssi=-42.0 if ant.is_active else None
     )
 

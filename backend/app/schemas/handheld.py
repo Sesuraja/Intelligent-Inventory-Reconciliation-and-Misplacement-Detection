@@ -24,6 +24,7 @@ class HandheldDeviceResponse(BaseModel):
         from_attributes = True
 
 class HandheldSessionCreate(BaseModel):
+    session_code: Optional[str] = None
     operator_name: Optional[str] = "Warehouse Operator"
     device_code: Optional[str] = "HH-01"
     shelf_code: Optional[str] = None

@@ -68,11 +68,42 @@ def register_handheld_reader(payload: HandheldDeviceRegister, db: Session = Depe
     return device
 
 
+@router.get("/sessions")
+def list_scan_sessions(limit: int = 50, db: Session = Depends(get_db)):
+    """List recent handheld scan sessions for ground truth verification."""
+    sessions = db.query(HandheldScanSession).order_by(HandheldScanSession.id.desc()).limit(limit).all()
+    result = []
+    for s in sessions:
+        shelf_code = s.target_shelf_code
+        if not shelf_code and s.shelf:
+            shelf_code = s.shelf.shelf_code
+        device_code = s.device.device_code if s.device else "HH-01"
+        result.append({
+            "id": s.id,
+            "session_code": s.session_code,
+            "shelf_code": shelf_code or "SHELF_A",
+            "target_shelf_code": shelf_code or "SHELF_A",
+            "device_id": device_code,
+            "device_code": device_code,
+            "total_tags_scanned": s.unique_epcs or s.total_scans or 0,
+            "total_scans": s.total_scans or 0,
+            "unique_epcs": s.unique_epcs or 0,
+            "status": s.status,
+            "scan_mode": s.scan_mode,
+            "operator_name": s.operator_name,
+            "created_at": s.started_at.isoformat() if s.started_at else None,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+            "notes": s.notes
+        })
+    return result
+
+
 @router.post("/sessions", response_model=HandheldSessionResponse)
 def create_scan_session(payload: HandheldSessionCreate, db: Session = Depends(get_db)):
     """Create a new mobile handheld RFID scan session for location inventory verification."""
     now = datetime.now(timezone.utc)
-    session_uid = f"HSS-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+    session_uid = payload.session_code or f"HSS-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
 
     device = None
     if payload.device_code:

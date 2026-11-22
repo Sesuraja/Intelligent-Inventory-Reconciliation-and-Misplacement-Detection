@@ -421,6 +421,42 @@ def _seed_handheld_and_wms(db: Session, now: datetime):
             db.add_all([hh1, hh2])
             db.flush()
 
+        # Seed Handheld Scan Sessions
+        if db.query(HandheldScanSession).count() == 0:
+            hh = db.query(HandheldDevice).first()
+            s1 = db.query(Shelf).first()
+            s2 = db.query(Shelf).offset(1).first() or s1
+            ses1 = HandheldScanSession(
+                session_code="SCAN-00104",
+                device_id=hh.id if hh else None,
+                operator_name="Marcus Vance",
+                shelf_id=s1.id if s1 else None,
+                target_shelf_code=s1.shelf_code if s1 else "SHELF_A",
+                status="COMPLETED",
+                scan_mode="DISCREPANCY_VERIFICATION",
+                total_scans=124,
+                unique_epcs=124,
+                started_at=now - timedelta(hours=5),
+                completed_at=now - timedelta(hours=4, minutes=45),
+                notes="Morning ground truth physical verification of Shelf A"
+            )
+            ses2 = HandheldScanSession(
+                session_code="SCAN-00105",
+                device_id=hh.id if hh else None,
+                operator_name="Elena Rostova",
+                shelf_id=s2.id if s2 else None,
+                target_shelf_code=s2.shelf_code if s2 else "SHELF_B",
+                status="COMPLETED",
+                scan_mode="CYCLE_COUNT",
+                total_scans=56,
+                unique_epcs=56,
+                started_at=now - timedelta(hours=1),
+                completed_at=now - timedelta(minutes=40),
+                notes="Targeted verification of high-value components"
+            )
+            db.add_all([ses1, ses2])
+            db.flush()
+
         # Seed WMS Inventory mirroring expected items
         if db.query(WMSInventory).count() == 0:
             inv_items = db.query(Inventory).all()

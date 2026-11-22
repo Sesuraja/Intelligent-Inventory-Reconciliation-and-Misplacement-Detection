@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 import numpy as np
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
@@ -113,7 +114,7 @@ class RFIDEventCollector:
                     normalized_events.append(norm)
 
                     event_row = RFIDEvent(
-                        event_id=norm["event_id"],
+                        event_id=f"EVT-{uuid.uuid4().hex.upper()}",
                         epc=norm["epc"],
                         reader_id=norm["reader_id"],
                         antenna_id=norm["antenna_id"],
@@ -127,7 +128,11 @@ class RFIDEventCollector:
                     )
                     db.add(event_row)
 
-            db.commit()
+            try:
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.warning(f"Warning committing normalized RFID events: {e}")
 
             # Append to sliding in-memory buffer (keep last 30s)
             self.recent_events_buffer.extend(normalized_events)
