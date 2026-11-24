@@ -4,9 +4,9 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from app.core.config import settings
 from app.core.logging import logger
@@ -24,9 +24,15 @@ from app.api.v1.exceptions import router as exceptions_router
 from app.api.v1.reports import router as reports_router
 from app.api.v1.ai import router as ai_router
 from app.api.v1.reconciliation import router as reconciliation_router
-from app.api.v1.simulator import router as simulator_router
 from app.api.v1.handheld import router as handheld_router
 from app.api.v1.wms import router as wms_router
+from app.api.v1.sessions import router as sessions_router
+from app.api.v1.audit import router as audit_router
+from app.api.v1.datasets import router as datasets_router
+from app.api.v1.system import router as system_router
+from app.api.v1.alerts import router as alerts_router
+from app.api.v1.cycle_counts import router as cycle_counts_router
+from app.api.v1.settings import router as settings_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -46,6 +52,37 @@ app = FastAPI(
     description="Intelligent UHF RFID Inventory Reconciliation, Misplacement Detection, and AI Root-Cause Engine",
     lifespan=lifespan
 )
+
+# Ensure metadata tables exist
+from app.models import Base
+from app.core.database import engine
+Base.metadata.create_all(bind=engine)
+
+# Safe SQLite column migrations for new audit fields
+with engine.connect() as conn:
+    try:
+        cols = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(audit_logs)").fetchall()]
+        if cols and "actor" not in cols:
+            conn.exec_driver_sql("ALTER TABLE audit_logs ADD COLUMN actor VARCHAR(100) DEFAULT 'system'")
+        if cols and "prev_hash" not in cols:
+            conn.exec_driver_sql("ALTER TABLE audit_logs ADD COLUMN prev_hash VARCHAR(64)")
+        if cols and "entry_hash" not in cols:
+            conn.exec_driver_sql("ALTER TABLE audit_logs ADD COLUMN entry_hash VARCHAR(64)")
+
+        # Discrepancy decoupled states & provenance (W6, W2)
+        disc_cols = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(discrepancies)").fetchall()]
+        if disc_cols and "predicted_state" not in disc_cols:
+            conn.exec_driver_sql("ALTER TABLE discrepancies ADD COLUMN predicted_state VARCHAR(50) DEFAULT 'uncertain_verify'")
+        if disc_cols and "workflow_status" not in disc_cols:
+            conn.exec_driver_sql("ALTER TABLE discrepancies ADD COLUMN workflow_status VARCHAR(50) DEFAULT 'new'")
+        if disc_cols and "is_simulated" not in disc_cols:
+            conn.exec_driver_sql("ALTER TABLE discrepancies ADD COLUMN is_simulated BOOLEAN DEFAULT 0")
+        if disc_cols and "validation_status" not in disc_cols:
+            conn.exec_driver_sql("ALTER TABLE discrepancies ADD COLUMN validation_status VARCHAR(50) DEFAULT 'experimental'")
+
+        conn.commit()
+    except Exception:
+        pass
 
 # Compression & CORS
 from fastapi.middleware.gzip import GZipMiddleware
@@ -71,25 +108,16 @@ app.include_router(exceptions_router, prefix=v1)
 app.include_router(reports_router, prefix=v1)
 app.include_router(ai_router, prefix=v1)
 app.include_router(reconciliation_router, prefix=v1)
-app.include_router(simulator_router, prefix=v1)
 app.include_router(handheld_router, prefix=v1)
 app.include_router(wms_router, prefix=v1)
+app.include_router(sessions_router, prefix=v1)
+app.include_router(audit_router, prefix=v1)
+app.include_router(datasets_router, prefix=v1)
+app.include_router(system_router, prefix=v1)
+app.include_router(alerts_router, prefix=v1)
+app.include_router(cycle_counts_router, prefix=v1)
+app.include_router(settings_router, prefix=v1)
 
-@app.get(f"{v1}/system/health")
-def system_health():
-    from app.rfid.operating_mode import mode_manager
-    from app.rfid.reader_manager import reader_manager
-    phys_connected = reader_manager.get_physical_adapter().is_connected
-    return {
-        "status": "HEALTHY",
-        "service": settings.PROJECT_NAME,
-        "version": settings.VERSION,
-        "database": "CONNECTED",
-        "collector_active": event_collector.is_running,
-        "operating_mode": mode_manager.current_mode.value,
-        "physical_reader_connected": phys_connected,
-        "readers_online": 1 if (mode_manager.current_mode.value == "SIMULATION" or phys_connected) else 0
-    }
 
 @app.get(f"{v1}/system/mode")
 def get_operating_mode():
@@ -197,9 +225,45 @@ def system_events():
     finally:
         db.close()
 
-# WebSockets
+# WebSockets with authentication and per-topic permissions (Section 3 Security)
+TOPIC_ROLE_PERMISSIONS = {
+    "system-status": {"Viewer", "Warehouse Operator", "Analyst", "Supervisor", "Admin", "device"},
+    "rfid-events": {"Warehouse Operator", "Analyst", "Supervisor", "Admin", "device"},
+    "inventory-updates": {"Warehouse Operator", "Analyst", "Supervisor", "Admin"},
+    "ai-alerts": {"Warehouse Operator", "Analyst", "Supervisor", "Admin"},
+}
+
 @app.websocket("/ws/{channel}")
-async def websocket_endpoint(websocket: WebSocket, channel: str):
+async def websocket_endpoint(
+    websocket: WebSocket,
+    channel: str,
+    token: Optional[str] = Query(None)
+):
+    # Enforce topic validation
+    if channel not in TOPIC_ROLE_PERMISSIONS:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=f"Invalid channel '{channel}'")
+        return
+
+    # Check authentication if required or if token is passed
+    if settings.REQUIRE_AUTH or settings.ENVIRONMENT.lower() == "production" or token is not None:
+        if not token:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication token required")
+            return
+        from app.core.security import decode_access_token
+        payload = decode_access_token(token)
+        if not payload:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired authentication token")
+            return
+        
+        user_role = payload.get("role", "Viewer")
+        allowed_roles = TOPIC_ROLE_PERMISSIONS[channel]
+        if user_role not in allowed_roles:
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION,
+                reason=f"Role '{user_role}' unauthorized for topic '{channel}'"
+            )
+            return
+
     await ws_manager.connect(websocket, channel)
     try:
         while True:

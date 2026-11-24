@@ -27,7 +27,26 @@ export const EventStreamRawView: React.FC<EventStreamRawViewProps> = ({
   const [copied, setCopied] = useState(false);
   const [format, setFormat] = useState<'json' | 'llrp_binary'>('json');
 
-  const eventsToShow = isPaused ? pausedEvents : liveEvents;
+  // Filter controls
+  const [epcFilter, setEpcFilter] = useState('');
+  const [antennaFilter, setAntennaFilter] = useState('');
+  const [readerFilter, setReaderFilter] = useState('');
+  const [minRssi, setMinRssi] = useState<number>(-90);
+
+  const baseEvents = isPaused ? pausedEvents : liveEvents;
+  const eventsToShow = baseEvents.filter((evt) => {
+    if (epcFilter && !evt.epc.toLowerCase().includes(epcFilter.toLowerCase())) return false;
+    if (antennaFilter) {
+      const port = String(evt.antenna_port || evt.antenna_id || '');
+      if (port !== antennaFilter) return false;
+    }
+    if (readerFilter) {
+      const rCode = String(evt.reader_code || evt.reader_id || '');
+      if (!rCode.toLowerCase().includes(readerFilter.toLowerCase())) return false;
+    }
+    if (evt.rssi_dbm !== undefined && evt.rssi_dbm < minRssi) return false;
+    return true;
+  });
 
   const handleTogglePause = () => {
     if (!isPaused) {
@@ -106,6 +125,64 @@ export const EventStreamRawView: React.FC<EventStreamRawViewProps> = ({
             <span>Export Log</span>
           </button>
         </div>
+      </div>
+
+      {/* Stream Filter Bar */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-2xs flex flex-wrap items-center gap-3">
+        <div className="flex items-center space-x-1.5 text-slate-500 font-medium">
+          <Filter className="w-3.5 h-3.5" />
+          <span>Filters:</span>
+        </div>
+        <input
+          type="text"
+          placeholder="Filter EPC..."
+          value={epcFilter}
+          onChange={(e) => setEpcFilter(e.target.value)}
+          className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:border-blue-500 w-36 font-mono"
+        />
+        <input
+          type="text"
+          placeholder="Reader Code..."
+          value={readerFilter}
+          onChange={(e) => setReaderFilter(e.target.value)}
+          className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:border-blue-500 w-32 font-mono"
+        />
+        <select
+          value={antennaFilter}
+          onChange={(e) => setAntennaFilter(e.target.value)}
+          className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:border-blue-500"
+        >
+          <option value="">All Antennas</option>
+          <option value="1">Port 1 (Shelf A)</option>
+          <option value="2">Port 2 (Shelf B)</option>
+          <option value="3">Port 3 (Shelf C)</option>
+          <option value="4">Port 4 (Shelf D)</option>
+        </select>
+        <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+          <span>Min RSSI:</span>
+          <input
+            type="range"
+            min="-90"
+            max="-30"
+            value={minRssi}
+            onChange={(e) => setMinRssi(Number(e.target.value))}
+            className="w-20 accent-blue-600"
+          />
+          <span className="font-mono text-slate-700 font-bold">{minRssi} dBm</span>
+        </div>
+        {(epcFilter || readerFilter || antennaFilter || minRssi > -90) && (
+          <button
+            onClick={() => {
+              setEpcFilter('');
+              setReaderFilter('');
+              setAntennaFilter('');
+              setMinRssi(-90);
+            }}
+            className="text-[11px] text-blue-600 hover:underline ml-auto font-medium"
+          >
+            Reset Filters
+          </button>
+        )}
       </div>
 
       {/* Raw Payload Terminal Viewer */}

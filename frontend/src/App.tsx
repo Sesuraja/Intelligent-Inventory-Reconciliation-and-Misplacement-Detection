@@ -3,6 +3,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
 import { SettingsModal } from './components/layout/SettingsModal';
+import { SettingsPage } from './components/settings/SettingsPage';
 import { UserRolesView } from './components/supporting/UserRolesView';
 import { HelpDocsView } from './components/supporting/HelpDocsView';
 import { DashboardTab } from './components/dashboard/DashboardTab';
@@ -136,15 +137,7 @@ export function App() {
   };
 
   const handleOpenSettings = async () => {
-    setIsSettingsOpen(true);
-    if (models.length === 0) {
-      try {
-        const mods = await api.getAIModels();
-        setModels(mods);
-      } catch (err) {
-        console.error('Error loading AI models:', err);
-      }
-    }
+    handleNavigateTab('settings');
   };
 
   const initWebSocket = () => {
@@ -325,18 +318,7 @@ export function App() {
           )}
 
           {currentTab === 'settings' && (
-            <div className="bg-white border border-slate-200/90 rounded-2xl p-8 shadow-xs space-y-4 max-w-2xl mx-auto text-center">
-              <h2 className="text-lg font-bold text-slate-900">S1. System Settings & Hardware Parameters</h2>
-              <p className="text-xs text-slate-500">
-                Configure global facility parameters, WMS API hosts, model thresholds, and physical reader addresses.
-              </p>
-              <button
-                onClick={handleOpenSettings}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
-              >
-                Launch Settings Configuration Modal
-              </button>
-            </div>
+            <SettingsPage onRefreshData={loadSummary} />
           )}
         </main>
 

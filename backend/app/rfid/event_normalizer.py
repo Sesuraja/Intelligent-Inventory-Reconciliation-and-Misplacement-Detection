@@ -52,9 +52,21 @@ class EventNormalizer:
 
         received_at = datetime.now(timezone.utc)
         evt_source = raw_event.get("source") or source
+        is_sim = raw_event.get("is_simulated") if "is_simulated" in raw_event else (evt_source.upper() == "SIMULATION")
+
+        # Check clock-drift and stale events (watermark)
+        drift_seconds = abs((received_at - observed_at).total_seconds())
+        clock_drift_exceeded = drift_seconds > 5.0
+        is_stale = (received_at - observed_at).total_seconds() > 60.0
+
+        # Deterministic idempotency key: hash of reader + antenna + epc + timestamp
+        import hashlib
+        idempotency_raw = f"{reader_code}:{antenna_id}:{epc}:{observed_at.isoformat()}"
+        idempotency_key = hashlib.sha256(idempotency_raw.encode("utf-8")).hexdigest()
 
         normalized = {
             "event_id": event_id,
+            "idempotency_key": idempotency_key,
             "epc": epc,
             "reader_id": reader_code,
             "antenna_id": antenna_id,
@@ -63,6 +75,11 @@ class EventNormalizer:
             "observed_at": observed_at,
             "received_at": received_at,
             "source": evt_source,
+            "is_simulated": is_sim,
+            "data_source": evt_source.lower(),
+            "clock_drift_seconds": round(drift_seconds, 3),
+            "clock_drift_exceeded": clock_drift_exceeded,
+            "is_stale": is_stale,
             "raw_payload": raw_event
         }
 

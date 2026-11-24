@@ -158,10 +158,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
 
             <button
-              onClick={() => {
-                onOpenSettings();
-                if (onCloseMobile) onCloseMobile();
-              }}
+              onClick={() => handleNavClick('settings')}
               className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl text-xs font-medium transition ${
                 currentTab === 'settings'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'

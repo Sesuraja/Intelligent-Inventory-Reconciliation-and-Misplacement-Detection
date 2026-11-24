@@ -9,38 +9,36 @@ interface StatusBadgeProps {
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, showIcon = true }) => {
   switch (status) {
     case 'IN_PLACE':
+    case 'present_ok':
       return (
         <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-xs">
           {showIcon && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
-          <span>In-Place</span>
+          <span>Present OK</span>
         </span>
       );
     case 'MISPLACED':
+    case 'LIKELY_MISSING':
+    case 'likely_absent_or_misplaced':
       return (
         <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-xs">
           {showIcon && <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
-          <span>Misplaced</span>
-        </span>
-      );
-    case 'LIKELY_MISSING':
-      return (
-        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 shadow-xs">
-          {showIcon && <EyeOff className="w-3.5 h-3.5 text-rose-600" />}
-          <span>Likely Missing</span>
+          <span>Likely Absent / Misplaced</span>
         </span>
       );
     case 'POSSIBLE_UNREAD':
+    case 'likely_unread':
       return (
         <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs">
           {showIcon && <Radio className="w-3.5 h-3.5 text-indigo-600" />}
-          <span>RF Unread</span>
+          <span>Likely Unread</span>
         </span>
       );
     case 'AMBIGUOUS':
+    case 'uncertain_verify':
       return (
         <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200 shadow-xs">
           {showIcon && <HelpCircle className="w-3.5 h-3.5 text-purple-600" />}
-          <span>Ambiguous</span>
+          <span>Uncertain (Rescan)</span>
         </span>
       );
     case 'VERIFIED':

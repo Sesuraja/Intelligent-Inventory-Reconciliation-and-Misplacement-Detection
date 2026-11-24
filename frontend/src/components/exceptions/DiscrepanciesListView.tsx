@@ -126,20 +126,19 @@ export const DiscrepanciesListView: React.FC<DiscrepanciesListViewProps> = ({
                 <th className="py-3 px-4">Expected</th>
                 <th className="py-3 px-4">Observed</th>
                 <th className="py-3 px-4">AI Confidence</th>
-                <th className="py-3 px-4">Unit Cost</th>
                 <th className="py-3 px-4 text-right">Inspect</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12">
+                  <td colSpan={8} className="py-12">
                     <LoadingState message="Fetching active inventory discrepancies..." />
                   </td>
                 </tr>
               ) : filteredExceptions.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400 font-sans">
+                  <td colSpan={8} className="py-12 text-center text-slate-400 font-sans">
                     No exceptions match the selected filter. Inventory state is fully reconciled.
                   </td>
                 </tr>
@@ -162,7 +161,17 @@ export const DiscrepanciesListView: React.FC<DiscrepanciesListViewProps> = ({
                         <span className="text-[10px] text-slate-400 font-mono">{exc.product_sku}</span>
                       </td>
                       <td className="py-3 px-4">
-                        <StatusBadge status={exc.discrepancy_type} />
+                        <div className="flex flex-col space-y-1">
+                          <StatusBadge status={exc.predicted_state || exc.discrepancy_type} />
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Workflow: <strong className="uppercase text-slate-700">{exc.workflow_status || exc.status}</strong>
+                          </span>
+                          {exc.is_simulated && (
+                            <span className="inline-block bg-purple-100 text-purple-800 text-[9px] font-bold px-1.5 py-0.2 rounded w-max">
+                              SIMULATED
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 font-mono text-blue-600 font-semibold">
                         ANT-0{exc.observed_antenna_id || 1}
@@ -181,9 +190,6 @@ export const DiscrepanciesListView: React.FC<DiscrepanciesListViewProps> = ({
                       </td>
                       <td className="py-3 px-4 font-mono font-bold text-slate-800">
                         {Math.round(exc.confidence * 100)}%
-                      </td>
-                      <td className="py-3 px-4 font-mono text-slate-600">
-                        ${exc.unit_cost?.toFixed(2) || '0.00'}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button

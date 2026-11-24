@@ -27,22 +27,26 @@ import {
   AreaChart,
   Area
 } from 'recharts';
-import { DashboardSummary, NavigationTab } from '../../types';
+import { DashboardSummary, NavigationTab, SubPageId } from '../../types';
 import { LoadingState } from '../common/LoadingState';
 import { useAppSettings } from '../../context/SettingsContext';
-import { SlidersHorizontal } from 'lucide-react';
+import { SlidersHorizontal, LayoutDashboard } from 'lucide-react';
 
 interface DashboardTabProps {
   summary: DashboardSummary | null;
   onNavigateTab: (tab: NavigationTab, filter?: string) => void;
   onSelectDiscrepancy: (discrepancyId: number) => void;
   onOpenSettings?: () => void;
+  subPage?: SubPageId;
+  onRefreshSummary?: () => void;
 }
 
 export const DashboardTab: React.FC<DashboardTabProps> = ({
   summary,
   onNavigateTab,
-  onOpenSettings
+  onOpenSettings,
+  subPage,
+  onRefreshSummary
 }) => {
   const { settings } = useAppSettings();
 
@@ -85,7 +89,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </div>
           <div className="px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 font-semibold flex items-center space-x-1.5">
             <Radio className="w-4 h-4 text-blue-600" />
-            <span>4 Ports Active</span>
+            <span>2 Ports Active</span>
           </div>
           {onOpenSettings && (
             <button

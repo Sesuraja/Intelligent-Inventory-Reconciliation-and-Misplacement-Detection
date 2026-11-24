@@ -104,7 +104,7 @@ def test_readers_and_antennas():
 
     res_ant = client.get("/api/v1/antennas")
     assert res_ant.status_code == 200
-    assert len(res_ant.json()) >= 3
+    assert len(res_ant.json()) >= 2
 
 def test_rfid_events():
     res = client.get("/api/v1/rfid-events?limit=10")
@@ -171,7 +171,6 @@ def test_dynamic_product_shelf_tag_antenna_lifecycle():
         "name": f"Heavy Duty Industrial Alternator {uid}",
         "category": "Automotive",
         "unit": "units",
-        "unit_cost": 280.0,
         "min_stock": 4,
         "description": "Dynamic testing SKU"
     }

@@ -28,9 +28,16 @@ class Discrepancy(Base):
     observed_location_id = Column(Integer, ForeignKey("shelves.id"), nullable=True)
     confidence = Column(Float, default=0.0)
     root_cause = Column(String(100), nullable=True)
-    status = Column(String(50), default="NEW")  # NEW, AI_ANALYZED, PENDING_VERIFICATION, ASSIGNED, VERIFIED, RESOLVED
+    status = Column(String(50), default="NEW")  # Legacy workflow status
     assigned_to = Column(String(100), nullable=True)
     verification_required = Column(Boolean, default=True)
+
+    # W6 & W2: Decoupled Classification and Workflow States with Simulation Provenance
+    predicted_state = Column(String(50), default="uncertain_verify", nullable=True)  # present_ok, likely_unread, likely_absent_or_misplaced, uncertain_verify
+    workflow_status = Column(String(50), default="new", nullable=True)  # new, ai_analyzed, pending_verification, verified, resolved
+    is_simulated = Column(Boolean, default=False, nullable=True)
+    validation_status = Column(String(50), default="experimental", nullable=True)  # experimental, domain_validated, retired
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     resolved_at = Column(DateTime, nullable=True)
 

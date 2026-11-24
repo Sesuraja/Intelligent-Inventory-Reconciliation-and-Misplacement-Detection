@@ -14,7 +14,7 @@ from app.ai.location_inference import location_engine
 from app.ai.demand_forecasting import demand_engine
 from app.ai.cycle_counting import cycle_counting_engine
 from app.ai.destination_inference import destination_engine
-from app.ai.demo_runner import demo_runner
+from app.ai.rules_baseline import rules_baseline_engine
 from app.schemas.ai import (
     ReadReliabilityInput, ReadReliabilityOutput,
     RootCauseInput, RootCauseOutput,
@@ -30,18 +30,43 @@ def get_ai_models(db: Session = Depends(get_db)):
     """Returns AI model registry metadata, versions, and validation metrics."""
     return model_registry.get_all_models(db=db)
 
+@router.post("/models/{id}/train-candidate")
+def train_candidate_model(id: int, dataset_version: str = Query("ds-v1.0"), db: Session = Depends(get_db)):
+    """Trains a candidate AI model version on held-out split (W3 compliance)."""
+    res = model_registry.train_candidate(id, dataset_version=dataset_version, db=db)
+    if not res.get("success"):
+        raise HTTPException(status_code=404, detail=res.get("message"))
+    return res
+
+@router.post("/models/{id}/promote")
+def promote_candidate_model(
+    id: int,
+    candidate_version: str = Query(...),
+    promoted_by: str = Query("supervisor"),
+    db: Session = Depends(get_db)
+):
+    """Promotes a candidate model version to active with supervisor audit log (W3 compliance)."""
+    res = model_registry.promote_candidate(id, candidate_version=candidate_version, promoted_by=promoted_by, db=db)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
+
 @router.post("/models/{id}/retrain")
 def retrain_ai_model(id: int, db: Session = Depends(get_db)):
     """Triggers retraining of AI models using verified ground-truth audit logs."""
     return model_registry.trigger_retraining(id, db=db)
 
 @router.post("/models/{id}/rollback")
-def rollback_ai_model(id: int, db: Session = Depends(get_db)):
+def rollback_ai_model(
+    id: int,
+    rolled_back_by: str = Query("supervisor"),
+    db: Session = Depends(get_db)
+):
     """
-    SRS Requirement 7: Reverts model artifact and metadata to previous checkpoint.
-    Allows warehouse administrators to rollback underperforming models.
+    SRS Requirement 7 & W3: Reverts model artifact and metadata to previous checkpoint.
+    Allows warehouse administrators to rollback underperforming models and writes audit log.
     """
-    res = model_registry.rollback_model(id)
+    res = model_registry.rollback_model(id, rolled_back_by=rolled_back_by, db=db)
     if not res.get("success"):
         raise HTTPException(status_code=404, detail=res.get("message"))
     return res
@@ -126,6 +151,7 @@ def infer_location(epc: str, expected_shelf: str, antenna_stats: Dict[int, Dict[
         predicted_location=loc_res["predicted_location"],
         confidence=loc_res["confidence"],
         candidate_locations=loc_res["candidate_locations"],
+        predicted_state=loc_res["predicted_state"],
         status=loc_res["predicted_state"],
         verification_required=loc_res["verification_required"]
     )
@@ -212,7 +238,7 @@ def get_cycle_counting_priorities(db: Session = Depends(get_db)):
             Discrepancy.expected_location_id == s.id,
             Discrepancy.status.in_(["NEW", "AI_ANALYZED", "PENDING_VERIFICATION"])
         ).count()
-        total_val = sum(i.product.unit_cost for i in items if i.product)
+        total_val = float(len(items) * 100.0)
 
         rec = cycle_counting_engine.calculate_shelf_risk(
             shelf_id=s.id,
@@ -267,7 +293,7 @@ def get_scored_event_json(epc: str, db: Session = Depends(get_db)):
         zone_name="Zone A",
         open_exceptions_count=1 if item.status != "IN_PLACE" else 0,
         misplaced_count=1 if item.status == "MISPLACED" else 0,
-        total_shelf_value=(item.product.unit_cost * 6) if item.product else 900.0,
+        total_shelf_value=600.0,
         items_count=6
     )
     
@@ -278,30 +304,160 @@ def get_scored_event_json(epc: str, db: Session = Depends(get_db)):
         min_stock=item.product.min_stock if item.product else 2
     )
 
-    rules = read_reliability_model.evaluate_rules_baseline({
-        "total_reads": 25 if item.status == "IN_PLACE" else 0,
-        "last_seen_seconds": 2.0 if item.status == "IN_PLACE" else 45.0,
-        "reader_health": 1.0
-    })
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Determine baseline state using deterministic baseline engine
+    ant_stats = {1: {"read_count": 25, "median_rssi": -45.0}} if item.status == "IN_PLACE" else {}
+    base_eval = rules_baseline_engine.evaluate_item(
+        epc=epc,
+        expected_shelf=exp_code,
+        antenna_stats=ant_stats,
+        last_seen_seconds=2.0 if item.status == "IN_PLACE" else 45.0,
+        sweep_count=10 if item.status == "IN_PLACE" else 5,
+        port_shelf_map={1: exp_code},
+        is_simulated=True
+    )
+
+    pred_state = "present_ok" if item.status == "IN_PLACE" else (
+        "likely_unread" if item.status == "POSSIBLE_UNREAD" else (
+            "uncertain_verify" if item.status in ("uncertain_verify", "AMBIGUOUS") else "likely_absent_or_misplaced"
+        )
+    )
 
     return {
         "epc": epc,
-        "predicted_state": item.status,
-        "score": item.confidence,
-        "root_cause": rc["predicted_cause"],
-        "class_probabilities": rc.get("class_probabilities"),
+        "predicted_state": pred_state,
+        "score": round(item.confidence, 3),
+        "root_cause": {
+            "label": rc["predicted_cause"],
+            "probs": rc.get("class_probabilities", {})
+        },
         "candidate_zones": dest["candidate_zones"],
         "count_priority": shelf_risk["risk_score"],
         "demand_forecast": {
-            "forecast_1day": fc["forecast_1day"],
-            "forecast_3day": fc["forecast_3day"],
-            "forecast_7day": fc["forecast_7day"],
-            "stockout_risk": fc["stockout_risk"],
-            "probability_crossing_reorder": fc["probability_crossing_reorder"]
+            "d1": fc["forecast_1day"],
+            "d3": fc["forecast_3day"],
+            "d7": fc["forecast_7day"],
+            "p_reorder": fc["probability_crossing_reorder"],
+            "stockout_risk": fc["stockout_risk"]
         },
         "model_version": read_reliability_model.version,
-        "rules_baseline": rules,
+        "baseline_state": base_eval["baseline_state"],
+        "session_id": "session-live",
+        "generated_at": now_iso,
+        "reason_codes": base_eval.get("reason_codes", []),
+        "is_simulated": True,
+        "validation_status": "experimental",
         "evidence": rc["evidence"]
+    }
+
+@router.get("/baseline-comparison")
+def get_ai_baseline_comparison(db: Session = Depends(get_db)):
+    """
+    W4: Side-by-side comparison between AI Intelligence Engine and Deterministic Rules Baseline
+    on identical EPCs in the inventory.
+    Reports sample size n, agreement rate with Wilson 95% CI, and detailed items.
+    """
+    items = db.query(Inventory).all()
+    from app.models.reader import Antenna
+    antennas = db.query(Antenna).all()
+    port_shelf_map = {
+        ant.port_number: (ant.shelf.shelf_code if ant.shelf else f"SHELF_{chr(64 + ant.port_number)}")
+        for ant in antennas
+    }
+    if not port_shelf_map:
+        port_shelf_map = {1: "SHELF_A", 2: "SHELF_B", 3: "SHELF_C", 4: "SHELF_D"}
+
+    comparisons = []
+    detailed_results = []
+
+    for item in items:
+        exp_code = item.expected_shelf.shelf_code if item.expected_shelf else "SHELF_A"
+        ant_stats = {}
+        if item.status == "IN_PLACE":
+            p = next((port for port, shelf in port_shelf_map.items() if shelf == exp_code), 1)
+            ant_stats[p] = {"read_count": 25, "median_rssi": -45.0}
+            last_seen = 2.0
+            sweep_count = 10
+        elif item.status == "MISPLACED":
+            obs_code = item.observed_shelf.shelf_code if item.observed_shelf else "SHELF_B"
+            p = next((port for port, shelf in port_shelf_map.items() if shelf == obs_code), 2)
+            ant_stats[p] = {"read_count": 22, "median_rssi": -48.0}
+            last_seen = 3.0
+            sweep_count = 10
+        elif item.status in ("POSSIBLE_UNREAD", "uncertain_verify", "AMBIGUOUS"):
+            last_seen = 15.0
+            sweep_count = 5
+        else:
+            last_seen = 300.0
+            sweep_count = 15
+
+        baseline_res = rules_baseline_engine.evaluate_item(
+            epc=item.epc,
+            expected_shelf=exp_code,
+            antenna_stats=ant_stats,
+            last_seen_seconds=last_seen,
+            sweep_count=sweep_count,
+            port_shelf_map=port_shelf_map,
+            is_simulated=True
+        )
+
+        ai_state = "present_ok" if item.status == "IN_PLACE" else (
+            "likely_unread" if item.status == "POSSIBLE_UNREAD" else (
+                "uncertain_verify" if item.status in ("uncertain_verify", "AMBIGUOUS") else "likely_absent_or_misplaced"
+            )
+        )
+
+        comparisons.append({
+            "epc": item.epc,
+            "ai_predicted_state": ai_state,
+            "baseline_state": baseline_res["baseline_state"],
+            "ai_score": item.confidence,
+            "is_simulated": True
+        })
+
+        detailed_results.append({
+            "epc": item.epc,
+            "expected_shelf": exp_code,
+            "ai": {
+                "predicted_state": ai_state,
+                "legacy_status": item.status,
+                "score": item.confidence,
+                "model_version": read_reliability_model.version,
+                "validation_status": "experimental"
+            },
+            "baseline": baseline_res
+        })
+
+    report = rules_baseline_engine.compare_ai_vs_baseline(comparisons)
+    report["items"] = detailed_results
+    report["zone_thresholds"] = rules_baseline_engine.zone_configs
+    return report
+
+@router.get("/baseline-thresholds")
+def get_baseline_thresholds():
+    """Returns currently configured deterministic baseline rule thresholds."""
+    return rules_baseline_engine.zone_configs
+
+@router.post("/baseline-thresholds")
+def configure_baseline_thresholds(
+    zone_key: str = Query("DEFAULT"),
+    timeout_seconds: float = Query(30.0),
+    min_sweeps: int = Query(3),
+    min_rssi: float = Query(-75.0)
+):
+    """Configures deterministic baseline rule thresholds per zone."""
+    rules_baseline_engine.set_zone_thresholds(
+        zone_key=zone_key,
+        timeout_seconds=timeout_seconds,
+        min_sweeps=min_sweeps,
+        min_rssi=min_rssi
+    )
+    return {
+        "success": True,
+        "zone_key": zone_key,
+        "configured_thresholds": rules_baseline_engine.get_zone_thresholds(zone_key)
     }
 
 @router.get("/evaluation")
@@ -372,21 +528,5 @@ def get_all_scored_events(db: Session = Depends(get_db)):
     items = db.query(Inventory).all()
     return [get_scored_event_json(i.epc, db) for i in items]
 
-@router.post("/demo/step/{step_number}")
-def execute_demo_step(step_number: int):
-    """Executes a step in the 6-step Live Demonstration Operator Script."""
-    return demo_runner.execute_step(step_number)
 
-@router.get("/demo/status")
-def get_demo_status():
-    """Returns current status and historical results of the live demo runner."""
-    return {
-        "current_step": demo_runner.current_step,
-        "step_history": demo_runner.step_history
-    }
-
-@router.post("/demo/reset")
-def reset_demo():
-    """Resets the live demonstration runner and physics simulation."""
-    return demo_runner.reset_demo()
 

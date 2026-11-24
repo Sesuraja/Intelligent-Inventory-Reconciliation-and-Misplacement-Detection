@@ -21,6 +21,18 @@ from app.models.wms import (
     WMSOrderLine,
     WMSTransaction,
 )
+from app.models.session import (
+    TestSession,
+    Sweep,
+    GroundTruthLabel,
+    InjectedScenario,
+    ReaderConfigSnapshot,
+)
+from app.models.security import DeviceApiKey
+from app.models.dataset import Dataset, DatasetItem, EvaluationRun
+from app.models.alert import Alert
+from app.models.cycle_count import CountList, CountTask
+from app.models.system_setting import SystemSetting
 
 __all__ = [
     "Base",
@@ -55,4 +67,17 @@ __all__ = [
     "WMSOrder",
     "WMSOrderLine",
     "WMSTransaction",
+    "TestSession",
+    "Sweep",
+    "GroundTruthLabel",
+    "InjectedScenario",
+    "ReaderConfigSnapshot",
+    "DeviceApiKey",
+    "Dataset",
+    "DatasetItem",
+    "EvaluationRun",
+    "Alert",
+    "CountList",
+    "CountTask",
+    "SystemSetting",
 ]

@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.models.discrepancy import Discrepancy, VerificationLog
@@ -12,8 +13,31 @@ from app.schemas.discrepancy import (
     VerificationLogResponse, ResolveExceptionRequest
 )
 from app.services.verification_service import VerificationService
+from app.services.audit_service import audit_service
 
 router = APIRouter(prefix="/exceptions", tags=["AI Exceptions"])
+
+# Documented state mappings (W6 compliance)
+DISCREPANCY_TO_PREDICTED_STATE_MAP = {
+    "IN_PLACE": "present_ok",
+    "PRESENT_OK": "present_ok",
+    "POSSIBLE_UNREAD": "likely_unread",
+    "LIKELY_UNREAD": "likely_unread",
+    "MISPLACED": "likely_absent_or_misplaced",
+    "LIKELY_MISSING": "likely_absent_or_misplaced",
+    "LIKELY_ABSENT_OR_MISPLACED": "likely_absent_or_misplaced",
+    "AMBIGUOUS": "uncertain_verify",
+    "UNCERTAIN_VERIFY": "uncertain_verify"
+}
+
+STATUS_TO_WORKFLOW_STATUS_MAP = {
+    "NEW": "new",
+    "AI_ANALYZED": "ai_analyzed",
+    "PENDING_VERIFICATION": "pending_verification",
+    "ASSIGNED": "pending_verification",
+    "VERIFIED": "verified",
+    "RESOLVED": "resolved"
+}
 
 @router.get("", response_model=List[DiscrepancyResponse])
 def get_exceptions(
@@ -56,7 +80,6 @@ def get_exceptions(
             product_name=prod.name if prod else "Unknown Item",
             product_sku=prod.sku if prod else "SKU-UNKNOWN",
             category=prod.category if prod else "General",
-            unit_cost=prod.unit_cost if prod else 0.0,
             discrepancy_type=d.discrepancy_type,
             expected_location_id=d.expected_location_id,
             expected_shelf_code=exp_code,
@@ -65,6 +88,10 @@ def get_exceptions(
             confidence=d.confidence,
             root_cause=d.root_cause,
             status=d.status,
+            predicted_state=d.predicted_state or DISCREPANCY_TO_PREDICTED_STATE_MAP.get(d.discrepancy_type.upper(), "uncertain_verify"),
+            workflow_status=d.workflow_status or STATUS_TO_WORKFLOW_STATUS_MAP.get(d.status.upper(), "new"),
+            is_simulated=bool(d.is_simulated) if d.is_simulated is not None else False,
+            validation_status=d.validation_status or "experimental",
             assigned_to=d.assigned_to,
             verification_required=d.verification_required,
             created_at=d.created_at,
@@ -96,7 +123,6 @@ def get_exception_details(id: int, db: Session = Depends(get_db)):
         product_name=prod.name if prod else "Unknown Item",
         product_sku=prod.sku if prod else "SKU-UNKNOWN",
         category=prod.category if prod else "General",
-        unit_cost=prod.unit_cost if prod else 0.0,
         discrepancy_type=d.discrepancy_type,
         expected_location_id=d.expected_location_id,
         expected_shelf_code=exp_code,
@@ -105,6 +131,10 @@ def get_exception_details(id: int, db: Session = Depends(get_db)):
         confidence=d.confidence,
         root_cause=d.root_cause,
         status=d.status,
+        predicted_state=d.predicted_state or DISCREPANCY_TO_PREDICTED_STATE_MAP.get(d.discrepancy_type.upper(), "uncertain_verify"),
+        workflow_status=d.workflow_status or STATUS_TO_WORKFLOW_STATUS_MAP.get(d.status.upper(), "new"),
+        is_simulated=bool(d.is_simulated) if d.is_simulated is not None else False,
+        validation_status=d.validation_status or "experimental",
         assigned_to=d.assigned_to,
         verification_required=d.verification_required,
         created_at=d.created_at,
@@ -165,6 +195,86 @@ async def resolve_exception(id: int, res_in: ResolveExceptionRequest, db: Sessio
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+class SafeOverrideRequest(BaseModel):
+    override_state: str  # present_ok, likely_unread, likely_absent_or_misplaced, uncertain_verify
+    confirmation: bool = True
+    reason: str  # Mandatory justification
+    supervisor_name: str = "supervisor"
+
+@router.post("/{id}/override", response_model=DiscrepancyResponse)
+def safe_manual_override(
+    id: int,
+    body: SafeOverrideRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Safe manual override with mandatory supervisor confirmation reason and audit log entry.
+    Allows manual elevation or dismissal of AI discrepancy states.
+    """
+    if not body.confirmation:
+        raise HTTPException(status_code=400, detail="Explicit confirmation is required for manual override")
+    if not body.reason or len(body.reason.strip()) < 5:
+        raise HTTPException(status_code=400, detail="A detailed supervisor reason (min 5 chars) is mandatory for override")
+
+    d = db.query(Discrepancy).filter(Discrepancy.id == id).first()
+    if not d:
+        raise HTTPException(status_code=404, detail="Discrepancy not found")
+
+    old_state = d.predicted_state
+    d.predicted_state = body.override_state
+    d.workflow_status = "resolved"
+    d.resolved_at = datetime.now(timezone.utc)
+    d.notes = f"MANUAL OVERRIDE by {body.supervisor_name}: {body.reason}"
+    db.commit()
+    db.refresh(d)
+
+    audit_service.log(
+        db=db,
+        action="SAFE_MANUAL_OVERRIDE",
+        actor=body.supervisor_name,
+        entity="DISCREPANCY",
+        entity_id=str(d.id),
+        details={
+            "epc": d.epc,
+            "old_state": old_state,
+            "new_state": body.override_state,
+            "reason": body.reason,
+            "confirmed": True
+        }
+    )
+
+    exp_code = d.expected_shelf.shelf_code if d.expected_shelf else "UNKNOWN"
+    obs_code = d.observed_shelf.shelf_code if d.observed_shelf else None
+    inv = d.inventory_item
+    prod = inv.product if inv else None
+
+    return DiscrepancyResponse(
+        id=d.id,
+        epc=d.epc,
+        product_name=prod.name if prod else "Unknown Item",
+        product_sku=prod.sku if prod else "SKU-UNKNOWN",
+        category=prod.category if prod else "General",
+        discrepancy_type=d.discrepancy_type,
+        expected_location_id=d.expected_location_id,
+        expected_shelf_code=exp_code,
+        observed_location_id=d.observed_location_id,
+        observed_shelf_code=obs_code,
+        confidence=d.confidence,
+        root_cause=d.root_cause,
+        status="RESOLVED",
+        predicted_state=d.predicted_state,
+        workflow_status=d.workflow_status,
+        is_simulated=bool(d.is_simulated) if d.is_simulated is not None else False,
+        validation_status=d.validation_status or "experimental",
+        assigned_to=d.assigned_to,
+        verification_required=False,
+        created_at=d.created_at,
+        resolved_at=d.resolved_at,
+        ai_evidence=[f"Manual supervisor override applied: {body.reason}"],
+        recommended_action="OVERRIDE_CONFIRMED",
+        candidate_locations=[]
+    )
 
 @router.post("/{id}/reopen")
 def reopen_exception(id: int, reason: str = Query("Re-observed or contested resolution"), db: Session = Depends(get_db)):

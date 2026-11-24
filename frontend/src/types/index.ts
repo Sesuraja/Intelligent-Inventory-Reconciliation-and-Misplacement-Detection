@@ -11,30 +11,33 @@ export type NavigationTab =
 export type SubPageId =
   // 1. Dashboard (1 Page)
   | 'dashboard-home'
-  // 2. Inventory (5 Pages)
+  // 2. Inventory (6 Pages)
   | 'inventory-products'
   | 'inventory-tags'
   | 'inventory-layout'
   | 'inventory-wms'
   | 'inventory-history'
-  // 3. Live Monitoring (5 Pages)
+  | 'inventory-cycle-counts'
+  // 3. Live Monitoring (6 Pages)
   | 'monitoring-readers'
   | 'monitoring-reads'
   | 'monitoring-handheld'
   | 'monitoring-calibration'
   | 'monitoring-stream'
+  | 'monitoring-alerts'
   // 4. AI Exceptions (5 Pages)
   | 'exceptions-discrepancies'
   | 'exceptions-root-cause'
   | 'exceptions-actions'
   | 'exceptions-ground-truth'
   | 'exceptions-insights'
-  // 5. Reports (5 Pages)
+  // 5. Reports (6 Pages)
   | 'reports-reconciliation'
   | 'reports-performance'
   | 'reports-reader'
   | 'reports-forecast'
   | 'reports-exports'
+  | 'reports-dated-report'
   // Supporting (3 Pages)
   | 'supporting-settings'
   | 'supporting-users'
@@ -102,7 +105,6 @@ export interface InventoryItem {
   product_name: string;
   product_sku: string;
   category: string;
-  unit_cost: number;
   expected_location_id: number;
   expected_shelf_code: string;
   observed_location_id: number | null;
@@ -120,7 +122,6 @@ export interface ProductItem {
   name: string;
   category: string;
   unit: string;
-  unit_cost: number;
   min_stock: number;
   description: string | null;
   created_at: string;
@@ -174,11 +175,16 @@ export interface AntennaItem {
   shelf_code: string | null;
   tx_power_dbm: number;
   gain_dbi: number;
-  beam_angle_deg: number;
-  is_active: boolean;
-  purpose: string;
-  recent_read_count: number;
-  median_rssi: number | null;
+  beam_angle_deg?: number;
+  beam_angle?: number;
+  polarization?: string;
+  status?: string;
+  is_active?: boolean;
+  purpose?: string;
+  recent_read_count?: number;
+  median_rssi?: number | null;
+  median_rssi_baseline?: number | null;
+  noise_floor_dbm?: number | null;
 }
 
 export interface RFIDEvent {
@@ -186,6 +192,7 @@ export interface RFIDEvent {
   event_id: string;
   epc: string;
   reader_id: string;
+  reader_code?: string;
   antenna_id?: number;
   antenna_port?: number;
   antenna_code?: string;
@@ -202,7 +209,6 @@ export interface DiscrepancyItem {
   product_name: string;
   product_sku: string;
   category: string;
-  unit_cost: number;
   discrepancy_type: 'MISPLACED' | 'LIKELY_MISSING' | 'POSSIBLE_UNREAD' | 'AMBIGUOUS';
   expected_location_id: number;
   expected_shelf_code: string;
@@ -211,6 +217,10 @@ export interface DiscrepancyItem {
   confidence: number;
   root_cause: string | null;
   status: 'NEW' | 'AI_ANALYZED' | 'PENDING_VERIFICATION' | 'ASSIGNED' | 'VERIFIED' | 'RESOLVED';
+  predicted_state?: 'present_ok' | 'likely_unread' | 'likely_absent_or_misplaced' | 'uncertain_verify' | string;
+  workflow_status?: 'new' | 'ai_analyzed' | 'pending_verification' | 'verified' | 'resolved' | string;
+  is_simulated?: boolean;
+  validation_status?: string;
   assigned_to: string | null;
   verification_required: boolean;
   created_at: string;
@@ -229,9 +239,16 @@ export interface AIModelItem {
   model_name: string;
   version: string;
   model_type: string;
+  model_nature?: string;
   priority: string;
   algorithm: string;
   status: string;
+  validation_status?: string;
+  is_calibrated?: boolean;
+  calibration_method?: string;
+  data_provenance?: string;
+  disclaimer?: string;
+  provenance_banner?: string;
   metrics: Record<string, any>;
   last_trained: string;
 }
@@ -282,6 +299,10 @@ export interface AppSettings {
   systemTitle: string;
   apiHost: string;
   wsHost: string;
+  gatewayHost?: string;
+  gatewayLatestEndpoint?: string;
+  gatewayHistoryEndpoint?: string;
+  pollingIntervalMs?: number;
   currentUser: AuthUser;
 }
 

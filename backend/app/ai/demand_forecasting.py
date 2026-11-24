@@ -8,7 +8,7 @@ class DemandForecastingEngine:
     Predicts 1-day, 3-day, and 7-day item-level movement consumption and
     estimates probability of crossing safety stock / reorder thresholds.
     Compares boosted regression with Seasonal-Naive and Moving-Average baselines.
-    All demonstration histories are clearly labeled as software simulations.
+    All synthetic histories are clearly labeled as software simulations.
     """
 
     def __init__(self):
@@ -95,7 +95,7 @@ class DemandForecastingEngine:
                 "moving_average_7d": baseline_moving_avg_7d,
                 "model_advantage_pct": 28.4  # Boosted regressor achieves 28.4% lower MAE than naive baseline
             },
-            "data_source": "SYNTHETIC_DEMO_DATA (Calibrated Order Sequences)"
+            "data_source": "SYNTHETIC_DATA (Calibrated Order Sequences)"
         }
 
 demand_engine = DemandForecastingEngine()

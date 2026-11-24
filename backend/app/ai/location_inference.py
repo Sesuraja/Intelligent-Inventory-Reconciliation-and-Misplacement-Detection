@@ -20,6 +20,10 @@ class LocationInferenceEngine:
         # Minimum RSSI separation to disambiguate adjacent shelves without manual check
         self.separation_threshold_db = 6.0
         self.min_confidence_auto_accept = 0.82
+        # Configurable abstain band: if calibrated confidence falls in [lo, hi], abstain to uncertain_verify
+        self.abstain_band: Tuple[float, float] = (0.45, 0.75)
+        self.min_reads_for_relocation: int = 5
+        self.min_rssi_for_relocation: float = -72.0
 
     def infer_location(
         self,
@@ -167,19 +171,41 @@ class LocationInferenceEngine:
                 if (top_prob - second_prob) < 0.28 or top_prob < 0.65:
                     is_ambiguous = True
 
+        # Abstain Logic (W6b):
+        # 1. Calibrated score inside configurable abstain band [lo, hi]
+        # 2. Or poor RF evidence / weak coverage (e.g. occluded tag with faint stray reads)
+        is_poor_coverage = (
+            top_candidate.get("read_count", 0) < self.min_reads_for_relocation or
+            top_candidate.get("median_rssi", -99.0) < self.min_rssi_for_relocation or
+            total_system_reads < 6
+        )
+        is_inside_abstain_band = (self.abstain_band[0] <= top_prob <= self.abstain_band[1])
+
         # State Determination
         if is_ambiguous:
             state = "AMBIGUOUS"
             verification_required = True
             predicted_loc = None
         elif top_shelf == expected_shelf:
-            state = "IN_PLACE"
-            verification_required = False
-            predicted_loc = top_shelf
+            if is_poor_coverage and top_prob < 0.60:
+                state = "uncertain_verify"
+                verification_required = True
+                predicted_loc = top_shelf
+            else:
+                state = "IN_PLACE"
+                verification_required = False
+                predicted_loc = top_shelf
         else:
-            state = "MISPLACED"
-            verification_required = True
-            predicted_loc = top_shelf
+            # Candidate shelf differs from expected shelf
+            # Must NEVER claim confident misplacement on weak/poor evidence or uncertain score!
+            if is_inside_abstain_band or is_poor_coverage or top_prob < self.abstain_band[1]:
+                state = "uncertain_verify"
+                verification_required = True
+                predicted_loc = None  # Refuse to relocate without high-confidence evidence
+            else:
+                state = "MISPLACED"
+                verification_required = True
+                predicted_loc = top_shelf
 
         return {
             "epc": epc,

@@ -17,6 +17,7 @@ from app.ai.feature_engineering import FeatureEngine
 from app.ai.location_inference import location_engine
 from app.ai.read_reliability import read_reliability_model
 from app.ai.root_cause import root_cause_model
+from app.rfid.operating_mode import mode_manager
 from app.realtime.websocket_manager import ws_manager
 
 def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -189,7 +190,7 @@ class ReconciliationService:
                 Discrepancy.epc == epc
             ).order_by(Discrepancy.id.desc()).first()
 
-            if predicted_state in ["MISPLACED", "LIKELY_MISSING", "POSSIBLE_UNREAD", "AMBIGUOUS"]:
+            if predicted_state in ["MISPLACED", "LIKELY_MISSING", "POSSIBLE_UNREAD", "AMBIGUOUS", "uncertain_verify"]:
                 # Needs active exception
                 root_cause = root_cause_model.explain_discrepancy(
                     epc=epc,
@@ -203,6 +204,16 @@ class ReconciliationService:
                 )
 
                 obs_shelf_id = shelf_code_to_id.get(pred_shelf_code) if pred_shelf_code else None
+                norm_pred_state = "uncertain_verify"
+                p_upper = predicted_state.upper()
+                if p_upper in ("IN_PLACE", "PRESENT_OK"):
+                    norm_pred_state = "present_ok"
+                elif p_upper in ("POSSIBLE_UNREAD", "LIKELY_UNREAD"):
+                    norm_pred_state = "likely_unread"
+                elif p_upper in ("MISPLACED", "LIKELY_MISSING", "LIKELY_ABSENT_OR_MISPLACED"):
+                    norm_pred_state = "likely_absent_or_misplaced"
+
+                is_sim = loc_result.get("is_simulated", False) or getattr(mode_manager, "current_mode", None) and mode_manager.current_mode.value == "SIMULATION"
 
                 if not existing_disc:
                     new_disc = Discrepancy(
@@ -213,6 +224,10 @@ class ReconciliationService:
                         confidence=confidence,
                         root_cause=root_cause["predicted_cause"],
                         status="AI_ANALYZED",
+                        predicted_state=norm_pred_state,
+                        workflow_status="ai_analyzed",
+                        is_simulated=is_sim,
+                        validation_status="experimental",
                         verification_required=True,
                         created_at=now
                     )
@@ -238,6 +253,10 @@ class ReconciliationService:
                     existing_disc.confidence = confidence
                     existing_disc.root_cause = root_cause["predicted_cause"]
                     existing_disc.status = "AI_ANALYZED"
+                    existing_disc.predicted_state = norm_pred_state
+                    existing_disc.workflow_status = "ai_analyzed"
+                    existing_disc.is_simulated = is_sim
+                    existing_disc.validation_status = "experimental"
                     
                     # Update or append AI prediction
                     if existing_disc.ai_predictions:

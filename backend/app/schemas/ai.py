@@ -14,7 +14,8 @@ class LocationPredictionSchema(BaseModel):
     expected_location: str
     predicted_location: Optional[str] = None
     confidence: float
-    predicted_state: str  # IN_PLACE, MISPLACED, AMBIGUOUS, POSSIBLE_UNREAD, LIKELY_MISSING
+    predicted_state: Optional[str] = None  # present_ok, likely_unread, likely_absent_or_misplaced, uncertain_verify, etc.
+    status: Optional[str] = None
     verification_required: bool
     candidate_locations: List[CandidateLocation] = []
     model_version: str = "v1.0.0"

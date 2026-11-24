@@ -26,9 +26,11 @@ import { AssignTagModal } from './AssignTagModal';
 import { CreateProductModal } from './CreateProductModal';
 import { EditProductModal } from './EditProductModal';
 import { EditShelfModal } from './EditShelfModal';
+import { WarehouseConfigModal } from './WarehouseConfigModal';
 import { WMSSandboxView } from './WMSSandboxView';
 import { WarehouseLayoutView } from './WarehouseLayoutView';
 import { InventoryHistoryView } from './InventoryHistoryView';
+import { CycleCountWorkflowView } from './CycleCountWorkflowView';
 import { useAppSettings } from '../../context/SettingsContext';
 import { Edit2, Trash2 } from 'lucide-react';
 
@@ -50,13 +52,14 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
   const [productSearchQuery, setProductSearchQuery] = useState('');
   const [selectedShelf, setSelectedShelf] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
-  const [activeSubView, setActiveSubView] = useState<'products' | 'tags' | 'layout' | 'wms' | 'history'>('products');
+  const [activeSubView, setActiveSubView] = useState<'products' | 'tags' | 'layout' | 'wms' | 'history' | 'cycle-counts'>('products');
 
   useEffect(() => {
     if (subPage === 'inventory-tags') setActiveSubView('tags');
     else if (subPage === 'inventory-layout') setActiveSubView('layout');
     else if (subPage === 'inventory-wms') setActiveSubView('wms');
     else if (subPage === 'inventory-history') setActiveSubView('history');
+    else if (subPage === 'inventory-cycle-counts') setActiveSubView('cycle-counts');
     else if (subPage === 'inventory-products') setActiveSubView('products');
   }, [subPage]);
 
@@ -67,6 +70,7 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [editingShelf, setEditingShelf] = useState<ShelfItem | null>(null);
+  const [showWarehouseConfigModal, setShowWarehouseConfigModal] = useState(false);
 
   // Movement Modal State
   const [moveEpc, setMoveEpc] = useState('');
@@ -205,6 +209,16 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
           >
             Inventory History
           </button>
+          <button
+            onClick={() => { setActiveSubView('cycle-counts'); onNavigateSubPage?.('inventory-cycle-counts'); }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubView === 'cycle-counts'
+                ? 'bg-white text-indigo-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Cycle Counts
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -269,12 +283,6 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
             </div>
 
             <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
-              <div className="text-right hidden sm:block">
-                <div className="text-xs font-bold text-slate-900 font-mono">
-                  ${products.reduce((acc, p) => acc + (p.unit_cost || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
-                <div className="text-[10px] text-slate-400 uppercase tracking-wider">Catalog Valuation</div>
-              </div>
               <button
                 onClick={() => setShowCreateProductModal(true)}
                 className="flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
@@ -294,7 +302,6 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                     <th className="py-3 px-4">Master SKU</th>
                     <th className="py-3 px-4">Product Name</th>
                     <th className="py-3 px-4">Category</th>
-                    <th className="py-3 px-4">Unit Valuation</th>
                     <th className="py-3 px-4">Safety Stock (Min)</th>
                     <th className="py-3 px-4">Active RFID Tags</th>
                     <th className="py-3 px-4 text-right">Actions</th>
@@ -303,13 +310,13 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="py-12">
+                      <td colSpan={6} className="py-12">
                         <LoadingState message="Loading master product database catalog..." />
                       </td>
                     </tr>
                   ) : filteredProducts.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12">
+                      <td colSpan={6} className="py-12">
                         <EmptyState
                           title="No Master Products Found"
                           description={productSearchQuery ? "No products matched your search term." : "Your warehouse product database has no registered master SKUs yet."}
@@ -336,9 +343,6 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                             <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-medium text-[11px] border border-slate-200">
                               {p.category}
                             </span>
-                          </td>
-                          <td className="py-3 px-4 font-mono font-semibold text-slate-900">
-                            ${p.unit_cost.toFixed(2)}
                           </td>
                           <td className="py-3 px-4 font-mono text-slate-600">
                             {p.min_stock} {p.unit || 'units'}
@@ -449,19 +453,18 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                     <th className="py-3 px-4">Observed Shelf</th>
                     <th className="py-3 px-4">Reconciliation Status</th>
                     <th className="py-3 px-4">Confidence</th>
-                    <th className="py-3 px-4">Unit Cost</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {loading ? (
                     <tr>
-                      <td colSpan={8} className="py-12">
+                      <td colSpan={7} className="py-12">
                         <LoadingState message="Fetching registered EPC items from database..." />
                       </td>
                     </tr>
                   ) : filteredItems.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12">
+                      <td colSpan={7} className="py-12">
                         <EmptyState
                           title="No Inventory Found"
                           description="No tracked inventory items matched your active search or shelf filters."
@@ -503,9 +506,6 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                         <td className="py-3 px-4 font-mono font-semibold text-slate-800">
                           {Math.round(item.confidence * 100)}%
                         </td>
-                        <td className="py-3 px-4 font-mono text-slate-600">
-                          ${item.unit_cost.toFixed(2)}
-                        </td>
                       </tr>
                     ))
                   )}
@@ -528,6 +528,8 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
           items={items}
           antennas={antennas}
           onEditShelf={(s) => setEditingShelf(s)}
+          onAddShelf={() => setShowCreateShelfModal(true)}
+          onConfigureWarehouse={() => setShowWarehouseConfigModal(true)}
         />
       )}
 
@@ -539,6 +541,11 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
       {/* View: 2.5 Inventory History */}
       {activeSubView === 'history' && (
         <InventoryHistoryView shelves={shelves} />
+      )}
+
+      {/* View: Cycle Count Tasks Workflow */}
+      {activeSubView === 'cycle-counts' && (
+        <CycleCountWorkflowView />
       )}
 
       {/* Movement Modal */}
@@ -651,6 +658,13 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
         onClose={() => setEditingShelf(null)}
         onSuccess={loadData}
         shelf={editingShelf}
+      />
+
+      {/* Warehouse Layout Configuration Modal */}
+      <WarehouseConfigModal
+        isOpen={showWarehouseConfigModal}
+        onClose={() => setShowWarehouseConfigModal(false)}
+        onSuccess={loadData}
       />
 
     </div>

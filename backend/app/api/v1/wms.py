@@ -80,7 +80,6 @@ async def receive_inbound_goods(payload: WMSReceiveRequest, db: Session = Depend
             name=f"Inbound Goods {payload.sku}",
             category="Inbound",
             unit="piece",
-            unit_cost=100.0,
             min_stock=5
         )
         db.add(prod)
@@ -150,17 +149,6 @@ async def receive_inbound_goods(payload: WMSReceiveRequest, db: Session = Depend
 
         received_items.append(epc)
 
-    # Sync into simulator
-    sim = reader_manager.get_simulator()
-    for epc in received_items:
-        sim.register_simulated_tag(
-            epc=epc,
-            physical_shelf=payload.target_shelf_code,
-            is_present=True,
-            is_shadowed=False,
-            packaging="CARDBOARD"
-        )
-
     db.commit()
 
     return {
@@ -220,11 +208,6 @@ async def putaway_goods(payload: WMSPutawayRequest, db: Session = Depends(get_db
         timestamp=now
     ))
 
-    # Update simulator position
-    sim = reader_manager.get_simulator()
-    if payload.epc in sim.tags:
-        sim.tags[payload.epc]["physical_shelf"] = payload.to_shelf_code
-
     db.commit()
 
     return {
@@ -279,11 +262,6 @@ async def authorized_internal_transfer(payload: WMSMoveRequest, db: Session = De
         notes=payload.reason or "Authorized internal transfer",
         timestamp=now
     ))
-
-    # Update simulator physical location as well
-    sim = reader_manager.get_simulator()
-    if payload.epc in sim.tags:
-        sim.tags[payload.epc]["physical_shelf"] = payload.to_shelf_code
 
     db.commit()
 
@@ -364,11 +342,6 @@ async def ship_goods(payload: WMSShipRequest, db: Session = Depends(get_db)):
         notes="Dispatched on outbound carrier",
         timestamp=now
     ))
-
-    # Remove from simulator active RF field
-    sim = reader_manager.get_simulator()
-    if payload.epc in sim.tags:
-        sim.tags[payload.epc]["is_present"] = False
 
     db.commit()
 
@@ -471,11 +444,10 @@ async def inject_test_discrepancy(payload: WMSInjectErrorRequest, db: Session = 
         item = db.query(Inventory).filter(Inventory.status == "IN_PLACE").first()
         if not item:
             item = db.query(Inventory).first()
-        epc = item.epc if item else "EPC-9001"
+        epc = item.epc if item else "30341ADB10521280257A10A9"
 
     inv_item = db.query(Inventory).filter(Inventory.epc == epc).first()
     wms_item = db.query(WMSInventory).filter(WMSInventory.epc == epc).first()
-    sim = reader_manager.get_simulator()
 
     target_shelf = payload.target_shelf_code or "SHELF_C"
     target_obj = db.query(Shelf).filter(Shelf.shelf_code == target_shelf).first()
@@ -483,9 +455,7 @@ async def inject_test_discrepancy(payload: WMSInjectErrorRequest, db: Session = 
     report = {"error_type": payload.error_type, "epc": epc}
 
     if payload.error_type == "MISPLACE":
-        # Physically move tag to target shelf in simulator without updating WMS
-        sim.move_tag(epc, target_shelf)
-        # Also record an unauthorized movement log to feed root-cause model
+        # Record an unauthorized movement log to feed root-cause model
         db.add(InventoryMovement(
             epc=epc,
             from_shelf_id=inv_item.expected_location_id if inv_item else None,
@@ -497,7 +467,7 @@ async def inject_test_discrepancy(payload: WMSInjectErrorRequest, db: Session = 
             timestamp=now
         ))
         db.commit()
-        report["message"] = f"Tag {epc} physically moved to {target_shelf}. WMS still expects it at {inv_item.expected_shelf.shelf_code if inv_item and inv_item.expected_shelf else 'original shelf'}."
+        report["message"] = f"Tag {epc} movement logged to {target_shelf}. WMS still expects it at {inv_item.expected_shelf.shelf_code if inv_item and inv_item.expected_shelf else 'original shelf'}."
 
     elif payload.error_type == "WMS_DESYNC":
         # Change WMS expected shelf without physically moving item
@@ -507,14 +477,10 @@ async def inject_test_discrepancy(payload: WMSInjectErrorRequest, db: Session = 
         report["message"] = f"WMS expected shelf updated to {target_shelf}, but physical tag {epc} was NOT moved."
 
     elif payload.error_type == "SHRINKAGE":
-        # Physical shrinkage / theft: tag stops appearing in RF field
-        sim.set_tag_presence(epc, False)
-        report["message"] = f"Tag {epc} removed from RF field. Physical reader will observe 0 reads."
+        report["message"] = f"Tag {epc} marked for shrinkage audit."
 
     elif payload.error_type == "SHADOW":
-        # Shadowing: tag present but obscured by metal/liquid
-        sim.set_tag_shadowed(epc, True)
-        report["message"] = f"Tag {epc} marked as RF-shadowed. Antenna signals will attenuate significantly."
+        report["message"] = f"Tag {epc} flagged as potentially RF-shadowed."
 
     db.add(AuditLog(
         action="INJECT_TEST_ERROR",

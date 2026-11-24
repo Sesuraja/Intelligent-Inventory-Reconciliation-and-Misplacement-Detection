@@ -8,7 +8,6 @@ class DiscrepancyResponse(BaseModel):
     product_name: str
     product_sku: str
     category: str
-    unit_cost: float
     discrepancy_type: str
     expected_location_id: int
     expected_shelf_code: str
@@ -17,6 +16,10 @@ class DiscrepancyResponse(BaseModel):
     confidence: float
     root_cause: Optional[str] = None
     status: str
+    predicted_state: Optional[str] = "uncertain_verify"
+    workflow_status: Optional[str] = "new"
+    is_simulated: bool = False
+    validation_status: str = "experimental"
     assigned_to: Optional[str] = None
     verification_required: bool
     created_at: datetime

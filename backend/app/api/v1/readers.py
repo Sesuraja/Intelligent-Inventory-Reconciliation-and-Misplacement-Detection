@@ -132,11 +132,6 @@ def assign_antenna_to_shelf_and_reader(req: AntennaAssignRequest, db: Session = 
     db.commit()
     db.refresh(ant)
 
-    # Synchronize with physics simulator
-    sim = reader_manager.get_simulator()
-    sim.antenna_shelf_map[req.port_number] = shelf.shelf_code
-    sim.antenna_id_map[req.port_number] = ant.id
-
     return AntennaResponse(
         id=ant.id,
         reader_id=ant.reader_id,

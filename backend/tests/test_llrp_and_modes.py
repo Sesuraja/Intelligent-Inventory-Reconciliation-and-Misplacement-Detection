@@ -69,26 +69,20 @@ def test_llrp_parse_ro_access_report():
     assert obs["source"] == "PHYSICAL"
 
 def test_operating_mode_isolation():
-    # Verify SIMULATION mode routes to simulator
-    mode_manager.set_mode(OperatingMode.SIMULATION)
-    assert mode_manager.current_mode == OperatingMode.SIMULATION
-    sim_adapter = reader_manager.get_active_adapter()
-    assert sim_adapter is not None
-    assert sim_adapter.reader_code == "READER_01"
-
-    # Verify PHYSICAL mode routes to LLRP adapter
+    # Verify PHYSICAL mode routes to active gateway reader adapter
     mode_manager.set_mode(OperatingMode.PHYSICAL)
     assert mode_manager.current_mode == OperatingMode.PHYSICAL
     phys_adapter = reader_manager.get_active_adapter()
-    assert isinstance(phys_adapter, LLRPReaderAdapter)
+    assert phys_adapter is not None
+    assert phys_adapter.reader_code == "100EHH5323020053"
 
     # Verify OFFLINE mode suspends active adapter
     mode_manager.set_mode(OperatingMode.OFFLINE)
     assert mode_manager.current_mode == OperatingMode.OFFLINE
     assert reader_manager.get_active_adapter() is None
 
-    # Reset back to SIMULATION
-    mode_manager.set_mode(OperatingMode.SIMULATION)
+    # Reset back to PHYSICAL
+    mode_manager.set_mode(OperatingMode.PHYSICAL)
 
 @pytest.mark.asyncio
 async def test_physical_reader_probe_unreachable():

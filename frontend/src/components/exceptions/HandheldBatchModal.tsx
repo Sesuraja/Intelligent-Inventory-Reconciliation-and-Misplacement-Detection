@@ -19,7 +19,7 @@ export const HandheldBatchModal: React.FC<HandheldBatchModalProps> = ({
   const [operatorName, setOperatorName] = useState('Alex Rivera');
   const [targetShelf, setTargetShelf] = useState('SHELF_A');
   const [csvContent, setCsvContent] = useState(
-    'epc,shelf_code,rssi_dbm,barcode\nEPC-9001,SHELF_A,-48.2,QR-SHELF-A\nEPC-9002,SHELF_C,-44.5,QR-SHELF-C\nEPC-9003,SHELF_B,-52.1,QR-SHELF-B\nEPC-9004,SHELF_B,-49.0,QR-SHELF-B'
+    'epc,shelf_code,rssi_dbm,barcode\n30341ADB10521280257A10A9,SHELF_A,-48.2,QR-SHELF-A\n1A80B18C7809A71982647AC2,SHELF_A,-52.1,QR-SHELF-A\nE28011606000020788842D21,SHELF_B,-44.5,QR-SHELF-B\n000000000000000000000977,SHELF_B,-49.0,QR-SHELF-B'
   );
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);

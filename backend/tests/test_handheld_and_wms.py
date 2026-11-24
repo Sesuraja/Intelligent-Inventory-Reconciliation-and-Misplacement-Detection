@@ -153,8 +153,9 @@ def test_wms_sandbox_full_lifecycle():
     assert res_ship.json()["status"] == "SHIPPED"
 
     # 7. Cycle count adjustment
+    target_adj_epc = items[0]["epc"]
     res_adj = client.post("/api/v1/wms/adjust", json={
-        "epc": "EPC-9001",
+        "epc": target_adj_epc,
         "new_shelf_code": "SHELF_A",
         "quantity": 1,
         "reason": "Routine cycle count audit"
@@ -226,8 +227,10 @@ def test_wms_transaction_reversal_and_approval():
             assert res_rev.json()["success"] is True
 
     # 2. Reconcile approve
+    res_inv = client.get("/api/v1/wms/inventory")
+    target_rec_epc = res_inv.json()[0]["epc"] if res_inv.status_code == 200 and res_inv.json() else "30341ADB10521280257A10A9"
     res_app = client.post("/api/v1/wms/reconcile/approve", json={
-        "epc": "EPC-9001",
+        "epc": target_rec_epc,
         "action": "ACCEPT_LOCATION",
         "approved_shelf_code": "SHELF_A",
         "supervisor_name": "Senior Supervisor",

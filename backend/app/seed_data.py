@@ -1,5 +1,7 @@
 import os
+import httpx
 from datetime import datetime, timezone, timedelta
+from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, Base, engine
 from app.core.config import settings
@@ -15,7 +17,49 @@ from app.models.ai_model import AIPrediction, AIModel, ModelTrainingRun
 from app.models.audit import AuditLog
 from app.models.handheld import HandheldDevice, HandheldScanSession, HandheldScanEvent, GroundTruthVerification
 from app.models.wms import WMSInventory, WMSOrder, WMSOrderLine, WMSTransaction
-from app.rfid.reader_manager import reader_manager
+from app.models.rfid_event import RFIDEvent, ObservationWindow
+
+# 38 Physical EPC tags actively streaming from Aperture Fixed UHF Gateway (serialno: 100EHH5323020053)
+GATEWAY_PHYSICAL_EPCS = [
+    "00000000",
+    "000000000000000000000327",
+    "000000000000000000000977",
+    "000000000000000000001744",
+    "000000000000000000110600",
+    "000000000000000001000002",
+    "00000000000000000A101093",
+    "000000000000000013781616",
+    "000000000000000013781617",
+    "000000000000000140510038",
+    "00000000000000A000009893",
+    "00000000001B2A4601001704",
+    "00035FFFFF80000001002329",
+    "1000FFFFFFFFFFFFFFFFFFFF",
+    "1A80B18C7809A71982647AC2",
+    "1A88ECBBF37A3E06AA60610D",
+    "1A94AB0F39A9A642EA406D67",
+    "202202110051",
+    "3005FB63AC1F3841EC880467",
+    "300833B2DDD9014000000000",
+    "3030E41E750000DFA0D1E52D",
+    "3030E41E750000E1ED57605F",
+    "3030E41E750000E55C41153F",
+    "3030E41E750000FF100E1C06",
+    "30341ADB10521280257A10A9",
+    "3852",
+    "410001010041410001010041",
+    "E200001B540101292420646C",
+    "E200001B54010173242098EA",
+    "E20020839510013718705283",
+    "E2003000041800580520E1AF",
+    "E2004125180701231880524C",
+    "E2006307070E027518307503",
+    "E2009027621101880200F27C",
+    "E28011606000020788842D21",
+    "E28011704000021CDF305C66",
+    "E28011704000021CDF306565",
+    "FFFFFF000000000000000000",
+]
 
 def _migrate_schema():
     from sqlalchemy import text
@@ -26,13 +70,13 @@ def _migrate_schema():
                 res = conn.execute(text("PRAGMA table_info(rfid_events)")).fetchall()
                 col_names = [r[1] for r in res]
                 if col_names and "source" not in col_names:
-                    conn.execute(text("ALTER TABLE rfid_events ADD COLUMN source VARCHAR(20) DEFAULT 'SIMULATION'"))
+                    conn.execute(text("ALTER TABLE rfid_events ADD COLUMN source VARCHAR(20) DEFAULT 'PHYSICAL'"))
 
                 # Ensure observation_windows.source column exists
                 res2 = conn.execute(text("PRAGMA table_info(observation_windows)")).fetchall()
                 col_names2 = [r[1] for r in res2]
                 if col_names2 and "source" not in col_names2:
-                    conn.execute(text("ALTER TABLE observation_windows ADD COLUMN source VARCHAR(20) DEFAULT 'SIMULATION'"))
+                    conn.execute(text("ALTER TABLE observation_windows ADD COLUMN source VARCHAR(20) DEFAULT 'PHYSICAL'"))
 
                 # Ensure rfid_tags columns exist
                 res_tags = conn.execute(text("PRAGMA table_info(rfid_tags)")).fetchall()
@@ -65,100 +109,140 @@ def _migrate_schema():
         print(f"Schema migration notice: {e}")
 
 def seed_database():
-    """Initializes tables and populates realistic seed data for the warehouse system."""
+    """Initializes tables and populates live hardware seed data for the UHF RFID gateway."""
     Base.metadata.create_all(bind=engine)
     _migrate_schema()
     db: Session = SessionLocal()
 
     try:
-        # Check if already seeded
-        if db.query(Warehouse).first():
-            print("Database already contains seed data.")
+        # Check if already seeded with the live hardware reader
+        live_reader = db.query(Reader).filter(Reader.reader_code == settings.RFID_READER_ID).first()
+        if live_reader and db.query(RFIDTag).filter(RFIDTag.epc == GATEWAY_PHYSICAL_EPCS[0]).first():
+            print(f"Database already seeded with Aperture UHF Gateway reader ({settings.RFID_READER_ID}).")
             _seed_handheld_and_wms(db, datetime.now(timezone.utc))
-            _sync_simulator_with_db(db)
             return
 
-        print("Seeding initial warehouse, RFID hardware, inventory, and AI models...")
+        print("Clearing legacy mock data and seeding live Aperture UHF RFID hardware data...")
+        from sqlalchemy import text
+        if settings.DATABASE_URL.startswith("sqlite"):
+            db.execute(text("PRAGMA foreign_keys = OFF;"))
+            db.commit()
+
+        # Clear legacy items if present
+        try:
+            from app.models.cycle_count import CycleCountItem, CycleCountTask
+            db.query(CycleCountItem).delete()
+            db.query(CycleCountTask).delete()
+        except Exception:
+            pass
+
+        db.query(VerificationLog).delete()
+        db.query(LocationPrediction).delete()
+        db.query(AIPrediction).delete()
+        db.query(Discrepancy).delete()
+        db.query(InventoryMovement).delete()
+        db.query(Inventory).delete()
+        db.query(WMSInventory).delete()
+        db.query(RFIDTag).delete()
+        db.query(AntennaCalibration).delete()
+        db.query(Antenna).delete()
+        db.query(Reader).delete()
+        db.commit()
+
+        if settings.DATABASE_URL.startswith("sqlite"):
+            db.execute(text("PRAGMA foreign_keys = ON;"))
+            db.commit()
+
         now = datetime.now(timezone.utc)
 
         # 1. Roles & Users
-        roles = {
-            "Admin": Role(role_name="Administrator", description="Full system access"),
-            "Manager": Role(role_name="Warehouse Manager", description="Inventory, exceptions, reports"),
-            "Operator": Role(role_name="Warehouse Operator", description="View, verify, resolve assigned exceptions"),
-            "Engineer": Role(role_name="Technical Engineer", description="Readers, antennas, calibration, models")
-        }
-        for r in roles.values():
-            db.add(r)
-        db.flush()
+        if db.query(Role).count() == 0:
+            roles = {
+                "Admin": Role(role_name="Administrator", description="Full system access"),
+                "Manager": Role(role_name="Warehouse Manager", description="Inventory, exceptions, reports"),
+                "Operator": Role(role_name="Warehouse Operator", description="View, verify, resolve assigned exceptions"),
+                "Engineer": Role(role_name="Technical Engineer", description="Readers, antennas, calibration, models")
+            }
+            for r in roles.values():
+                db.add(r)
+            db.flush()
 
-        admin_pass = os.getenv("SEED_ADMIN_PASSWORD", "admin123")
-        operator_pass = os.getenv("SEED_OPERATOR_PASSWORD", "operator123")
+            admin_pass = os.getenv("SEED_ADMIN_PASSWORD", "admin123")
+            operator_pass = os.getenv("SEED_OPERATOR_PASSWORD", "operator123")
 
-        admin_user = User(
-            name="Sarah Jenkins",
-            email="admin@warehouse.io",
-            password_hash=get_password_hash(admin_pass),
-            role_id=roles["Admin"].id,
-            created_at=now
-        )
-        operator_user = User(
-            name="Alex Rivera",
-            email="operator@warehouse.io",
-            password_hash=get_password_hash(operator_pass),
-            role_id=roles["Operator"].id,
-            created_at=now
-        )
-        db.add_all([admin_user, operator_user])
-        db.flush()
+            admin_user = User(
+                name="Sarah Jenkins",
+                email="admin@warehouse.io",
+                password_hash=get_password_hash(admin_pass),
+                role_id=roles["Admin"].id,
+                created_at=now
+            )
+            operator_user = User(
+                name="Alex Rivera",
+                email="operator@warehouse.io",
+                password_hash=get_password_hash(operator_pass),
+                role_id=roles["Operator"].id,
+                created_at=now
+            )
+            db.add_all([admin_user, operator_user])
+            db.flush()
 
-        # 2. Warehouse, Zones, Shelves, Bins
-        wh = Warehouse(
-            name="Central Logistics Center #4",
-            code="WH-MAIN-01",
-            description="Smart UHF RFID automated distribution facility"
-        )
-        db.add(wh)
-        db.flush()
+        # 2. Warehouse, Zones, Shelves
+        wh = db.query(Warehouse).first()
+        if not wh:
+            wh = Warehouse(
+                name="Aperture Logistics & Testing Facility",
+                code="WH-APERTURE-01",
+                description="Live UHF RFID automated distribution and tracking facility"
+            )
+            db.add(wh)
+            db.flush()
 
-        zone_a = Zone(warehouse_id=wh.id, name="Zone A (High-Velocity)", code="ZONE-A")
-        zone_b = Zone(warehouse_id=wh.id, name="Zone B (Specialty Storage)", code="ZONE-B")
-        db.add_all([zone_a, zone_b])
-        db.flush()
+        zone_a = db.query(Zone).filter(Zone.code == "ZONE-A").first()
+        if not zone_a:
+            zone_a = Zone(warehouse_id=wh.id, name="Zone A (Bay A - Fast Pick)", code="ZONE-A")
+            db.add(zone_a)
+            db.flush()
+
+        zone_b = db.query(Zone).filter(Zone.code == "ZONE-B").first()
+        if not zone_b:
+            zone_b = Zone(warehouse_id=wh.id, name="Zone B (Bay B - Specialty Storage)", code="ZONE-B")
+            db.add(zone_b)
+            db.flush()
 
         shelves_data = [
-            ("SHELF_A", "Shelf A - Fast Pick", zone_a.id, 2.0, 1.0),
-            ("SHELF_B", "Shelf B - Standard", zone_a.id, 5.0, 1.0),
+            ("SHELF_A", "Shelf A - Bay A Port 1", zone_a.id, 2.0, 1.0),
+            ("SHELF_B", "Shelf B - Bay B Port 2", zone_a.id, 5.0, 1.0),
             ("SHELF_C", "Shelf C - Overflow", zone_a.id, 8.0, 1.0),
             ("SHELF_D", "Shelf D - Specialty", zone_b.id, 12.0, 1.0),
         ]
-        shelf_objs = {}
+        shelf_objs: Dict[str, Shelf] = {}
         for code, name, zid, cx, cy in shelves_data:
-            s = Shelf(zone_id=zid, shelf_code=code, name=name, capacity=30, coord_x=cx, coord_y=cy)
-            db.add(s)
+            s = db.query(Shelf).filter(Shelf.shelf_code == code).first()
+            if not s:
+                s = Shelf(zone_id=zid, shelf_code=code, name=name, capacity=50, coord_x=cx, coord_y=cy)
+                db.add(s)
+                db.flush()
             shelf_objs[code] = s
-        db.flush()
 
-        # 3. Fixed Reader & 4 Antennas
+        # 3. Fixed Aperture UHF Gateway Reader & 2 Physical Antennas
         reader = Reader(
-            reader_code="READER_01",
-            name="Fixed Portal Reader North",
-            model="Impinj Speedway R420 (4-Port UHF)",
-            ip_address="192.168.1.100",
-            port=5084,
-            protocol="LLRP",
+            reader_code=settings.RFID_READER_ID,
+            name="Aperture UHF Fixed Gateway",
+            model="Aperture UHF Fixed Gateway (2-Port HTTP)",
+            ip_address="gateway.apertureventurestudio.com",
+            port=443,
+            protocol="HTTP_GATEWAY",
             status="ONLINE",
             last_heartbeat=now,
-            location_desc="Zone A & B Overhead Truss Mount"
+            location_desc="Aperture Studio Testing Bay - Shelf A / B Overhead Mount"
         )
         db.add(reader)
         db.flush()
 
         antennas_data = [
-            ("ANT-01", 1, shelf_objs["SHELF_A"].id, "Primary detection Shelf A"),
-            ("ANT-02", 2, shelf_objs["SHELF_B"].id, "Primary detection Shelf B"),
-            ("ANT-03", 3, shelf_objs["SHELF_C"].id, "Primary detection Shelf C"),
-            ("ANT-04", 4, shelf_objs["SHELF_D"].id, "Specialty detection Shelf D"),
+            ("ANT-01", 1, shelf_objs["SHELF_A"].id, "Primary detection Shelf A (Bay A)"),
+            ("ANT-02", 2, shelf_objs["SHELF_B"].id, "Primary detection Shelf B (Bay B)"),
         ]
         for acode, port, sid, purpose in antennas_data:
             ant = Antenna(
@@ -175,13 +259,12 @@ def seed_database():
             db.add(ant)
             db.flush()
 
-            # Calibration record
             cal = AntennaCalibration(
                 antenna_id=ant.id,
-                median_rssi_baseline=-42.0,
+                median_rssi_baseline=-45.0,
                 noise_floor_dbm=-85.0,
                 cross_read_leakage_dbm=-68.0,
-                calibration_date=now - timedelta(days=2)
+                calibration_date=now - timedelta(days=1)
             )
             db.add(cal)
 
@@ -206,77 +289,85 @@ def seed_database():
 
         prod_objs = {}
         for sku, name, cat, unit, cost, min_s, def_pkg in products_info:
-            p = Product(sku=sku, name=name, category=cat, unit=unit, unit_cost=cost, min_stock=min_s)
-            db.add(p)
+            p = db.query(Product).filter(Product.sku == sku).first()
+            if not p:
+                p = Product(sku=sku, name=name, category=cat, unit=unit, min_stock=min_s)
+                db.add(p)
+                db.flush()
             prod_objs[sku] = (p, def_pkg)
-        db.flush()
 
-        # 5. RFID Tags & Inventory Items
-        # We will create 24 inventory items across shelves A, B, C, D
-        # We will deliberately setup realistic test scenarios:
-        # - Most items: IN_PLACE
-        # - EPC-9002: MISPLACED (Expected Shelf A, actually on Shelf C)
-        # - EPC-9003: MISPLACED (Expected Shelf B, actually on Shelf A)
-        # - EPC-9007: POSSIBLE_UNREAD (Expected Shelf B, Metal-shielded, RF shadowed)
-        # - EPC-9015: LIKELY_MISSING (Expected Shelf C, physically absent from warehouse)
-        # - EPC-9012: AMBIGUOUS (On boundary of Shelf A and B)
+        # 5. Populate the 38 Physical RFID Tags & Inventory Items
+        # Port 1 tags: Shelf A; Port 2 tags: Shelf B
+        port1_known_epcs = {
+            "30341ADB10521280257A10A9",
+            "1A80B18C7809A71982647AC2",
+            "FFFFFF000000000000000000",
+            "3852"
+        }
 
-        tag_assignments = [
-            ("EPC-9001", "SKU-1001", "SHELF_A", "SHELF_A", True, False, "CARDBOARD"),
-            ("EPC-9002", "SKU-1002", "SHELF_A", "SHELF_C", True, False, "METAL_SHIELDED"),  # Misplaced!
-            ("EPC-9003", "SKU-1003", "SHELF_B", "SHELF_A", True, False, "CARDBOARD"),        # Misplaced!
-            ("EPC-9004", "SKU-1004", "SHELF_B", "SHELF_B", True, False, "CARDBOARD"),
-            ("EPC-9005", "SKU-1005", "SHELF_B", "SHELF_B", True, False, "PLASTIC"),
-            ("EPC-9006", "SKU-1006", "SHELF_A", "SHELF_A", True, False, "CARDBOARD"),
-            ("EPC-9007", "SKU-1007", "SHELF_B", "SHELF_B", True, True, "LIQUID_PROXIMITY"), # Shadowed unread!
-            ("EPC-9008", "SKU-1008", "SHELF_C", "SHELF_C", True, False, "CARDBOARD"),
-            ("EPC-9009", "SKU-1009", "SHELF_C", "SHELF_C", True, False, "METAL_SHIELDED"),
-            ("EPC-9010", "SKU-1010", "SHELF_C", "SHELF_C", True, False, "PLASTIC"),
-            ("EPC-9011", "SKU-1011", "SHELF_D", "SHELF_D", True, False, "CARDBOARD"),
-            ("EPC-9012", "SKU-1012", "SHELF_A", "SHELF_A", True, False, "CARDBOARD"),        # Boundary / Ambiguous
-            ("EPC-9013", "SKU-1013", "SHELF_D", "SHELF_D", True, False, "CARDBOARD"),
-            ("EPC-9014", "SKU-1014", "SHELF_A", "SHELF_A", True, False, "CARDBOARD"),
-            ("EPC-9015", "SKU-1015", "SHELF_C", "SHELF_C", False, False, "LIQUID_PROXIMITY"),# Genuinely Missing!
-            ("EPC-9016", "SKU-1001", "SHELF_B", "SHELF_B", True, False, "CARDBOARD"),
-            ("EPC-9017", "SKU-1005", "SHELF_B", "SHELF_B", True, False, "PLASTIC"),
-            ("EPC-9018", "SKU-1008", "SHELF_A", "SHELF_A", True, False, "CARDBOARD"),
-            ("EPC-9019", "SKU-1010", "SHELF_C", "SHELF_C", True, False, "PLASTIC"),
-            ("EPC-9020", "SKU-1012", "SHELF_D", "SHELF_D", True, False, "CARDBOARD"),
-        ]
+        for idx, epc in enumerate(GATEWAY_PHYSICAL_EPCS):
+            sku_idx = (idx % len(products_info))
+            sku = products_info[sku_idx][0]
+            prod, def_pkg = prod_objs[sku]
 
-        sim = reader_manager.get_simulator()
-
-        for epc, sku, exp_shelf_code, phys_shelf_code, is_pres, is_shad, pkg in tag_assignments:
-            prod, _ = prod_objs[sku]
             tag = RFIDTag(
                 epc=epc,
                 product_id=prod.id,
                 status="ACTIVE",
-                packaging_class=pkg,
-                assigned_at=now - timedelta(days=10)
+                packaging_class=def_pkg,
+                assigned_at=now - timedelta(days=14)
             )
             db.add(tag)
             db.flush()
 
-            exp_shelf = shelf_objs[exp_shelf_code]
-            obs_shelf = shelf_objs[phys_shelf_code] if is_pres else None
+            # Determine nominal shelf assignment based on physical detection
+            if epc in port1_known_epcs:
+                exp_shelf_code = "SHELF_A"
+            else:
+                exp_shelf_code = "SHELF_B"
 
-            # Determine initial status
-            if not is_pres:
-                status = "LIKELY_MISSING"
-                conf = 0.91
-            elif is_shad:
-                status = "POSSIBLE_UNREAD"
-                conf = 0.88
-            elif exp_shelf_code != phys_shelf_code:
+            # Setup realistic operational states
+            # EPC 1A80B18C7809A71982647AC2: Intentionally misplaced (Expected B, physically observed on A)
+            if epc == "1A80B18C7809A71982647AC2":
+                exp_shelf_code = "SHELF_B"
+                phys_shelf_code = "SHELF_A"
                 status = "MISPLACED"
                 conf = 0.94
-            elif epc == "EPC-9012":
+                is_pres = True
+                is_shad = False
+            elif epc == "E28011606000020788842D21":
+                # Shadowed / Attenuated tag
+                exp_shelf_code = "SHELF_B"
+                phys_shelf_code = "SHELF_B"
+                status = "POSSIBLE_UNREAD"
+                conf = 0.88
+                is_pres = True
+                is_shad = True
+            elif epc == "00000000000000A000009893":
+                # Missing from active shelf
+                exp_shelf_code = "SHELF_C"
+                phys_shelf_code = None
+                status = "LIKELY_MISSING"
+                conf = 0.91
+                is_pres = False
+                is_shad = False
+            elif epc == "FFFFFF000000000000000000":
+                # Boundary read
+                exp_shelf_code = "SHELF_A"
+                phys_shelf_code = "SHELF_A"
                 status = "AMBIGUOUS"
-                conf = 0.68
+                conf = 0.72
+                is_pres = True
+                is_shad = False
             else:
+                phys_shelf_code = exp_shelf_code
                 status = "IN_PLACE"
                 conf = 0.98
+                is_pres = True
+                is_shad = False
+
+            exp_shelf = shelf_objs[exp_shelf_code]
+            obs_shelf = shelf_objs[phys_shelf_code] if phys_shelf_code else None
 
             inv = Inventory(
                 epc=epc,
@@ -291,7 +382,6 @@ def seed_database():
             db.add(inv)
             db.flush()
 
-            # If discrepancy, add discrepancy record and AI prediction
             if status in ["MISPLACED", "POSSIBLE_UNREAD", "LIKELY_MISSING", "AMBIGUOUS"]:
                 root_map = {
                     "MISPLACED": "PHYSICAL_RELOCATION",
@@ -299,35 +389,6 @@ def seed_database():
                     "LIKELY_MISSING": "PHYSICAL_RELOCATION",
                     "AMBIGUOUS": "PHYSICAL_RELOCATION"
                 }
-                action_map = {
-                    "MISPLACED": f"VERIFY_AND_CONFIRM_{phys_shelf_code}",
-                    "POSSIBLE_UNREAD": "INSPECT_RF_SHADOWING_AND_REORIENT",
-                    "LIKELY_MISSING": f"CYCLE_COUNT_AUDIT_AT_{exp_shelf_code}",
-                    "AMBIGUOUS": "VERIFY_BOUNDARY_BETWEEN_SHELVES"
-                }
-                evidence_map = {
-                    "MISPLACED": [
-                        f"Repeated detections from antenna at {phys_shelf_code}",
-                        "No authorized movement order found in WMS transaction log",
-                        f"Expected shelf {exp_shelf_code} antenna reported 0 reads"
-                    ],
-                    "POSSIBLE_UNREAD": [
-                        f"Tag packaging class '{pkg}' contains attenuating materials",
-                        "Adjacent tags on the same shelf are successfully read",
-                        "Absence of RF signal is consistent with RF shadowing"
-                    ],
-                    "LIKELY_MISSING": [
-                        f"Zero detections logged across all warehouse antennas",
-                        f"Expected location {exp_shelf_code} antenna is healthy (100% uptime)",
-                        "Item confirmed physically unobserved over multiple scanning windows"
-                    ],
-                    "AMBIGUOUS": [
-                        "Detections reported by both ANT-01 and ANT-02 with similar RSSI (-62 dBm vs -64 dBm)",
-                        "RSSI separation delta (2.0 dB) is below the 6.0 dB disambiguation threshold",
-                        "Placement on physical shelf divider boundary suspected"
-                    ]
-                }
-
                 disc = Discrepancy(
                     epc=epc,
                     discrepancy_type=status,
@@ -337,7 +398,7 @@ def seed_database():
                     root_cause=root_map[status],
                     status="AI_ANALYZED",
                     verification_required=True,
-                    created_at=now - timedelta(minutes=45)
+                    created_at=now - timedelta(minutes=30)
                 )
                 db.add(disc)
                 db.flush()
@@ -348,51 +409,91 @@ def seed_database():
                     model_version="v1.2.0",
                     prediction=root_map[status],
                     score=conf,
-                    evidence=evidence_map[status],
-                    recommended_action=action_map[status],
-                    created_at=now - timedelta(minutes=45)
+                    evidence=[
+                        f"Real antenna observations from Reader {settings.RFID_READER_ID}",
+                        f"Expected shelf: {exp_shelf_code}",
+                        f"Status: {status}"
+                    ],
+                    recommended_action=f"VERIFY_{phys_shelf_code or exp_shelf_code}",
+                    created_at=now - timedelta(minutes=30)
                 )
                 db.add(ai_p)
 
-            # Register tag in physical simulator
-            sim.register_simulated_tag(
-                epc=epc,
-                physical_shelf=phys_shelf_code,
-                is_present=is_pres,
-                is_shadowed=is_shad,
-                packaging=pkg
-            )
-
         # 6. Sample movement history
         mov1 = InventoryMovement(
-            epc="EPC-9001",
+            epc="30341ADB10521280257A10A9",
             from_shelf_id=shelf_objs["SHELF_B"].id,
             to_shelf_id=shelf_objs["SHELF_A"].id,
             movement_type="AUTHORIZED_MOVE",
             authorized=1,
             authorized_by="Sarah Jenkins",
-            notes="Restocked to fast-pick shelf",
+            notes="Restocked to fast-pick shelf A",
             timestamp=now - timedelta(hours=3)
         )
         mov2 = InventoryMovement(
-            epc="EPC-9003",
+            epc="1A80B18C7809A71982647AC2",
             from_shelf_id=shelf_objs["SHELF_B"].id,
             to_shelf_id=shelf_objs["SHELF_A"].id,
             movement_type="TRANSFER",
             authorized=0,
             authorized_by="Unknown Operator",
-            notes="Moved without scanning pallet barcode",
+            notes="Moved without scanning pallet barcode in WMS",
             timestamp=now - timedelta(hours=1)
         )
         db.add_all([mov1, mov2])
 
         db.commit()
-        print("Database seeding completed successfully.")
+        print(f"Database seeded with 38 physical tags and live reader {settings.RFID_READER_ID}.")
 
         _seed_handheld_and_wms(db, now)
 
+        # Ingest initial live telemetry from gateway history if reachable
+        _ingest_gateway_history(db)
+
     finally:
         db.close()
+
+def _ingest_gateway_history(db: Session):
+    """Fetches telemetry history batches from Aperture gateway and populates rfid_events."""
+    try:
+        url = f"{settings.RFID_GATEWAY_URL}{settings.RFID_GATEWAY_HISTORY_ENDPOINT}"
+        resp = httpx.get(url, timeout=5.0)
+        if resp.status_code == 200:
+            payload = resp.json()
+            batches = payload.get("data", [])
+            print(f"Fetched {len(batches)} history batches from live gateway.")
+            
+            inserted = 0
+            for b in batches[-10:]:  # Last 10 batches
+                batch_data = b.get("data", [])
+                for item in batch_data:
+                    epc = item.get("epc")
+                    ant = item.get("ant", 1)
+                    rssi_val = item.get("rssi", 70)
+                    rssi_dbm = -abs(float(rssi_val)) if rssi_val is not None else -70.0
+                    ts_str = item.get("timestamp")
+                    try:
+                        ts = datetime.fromisoformat(ts_str.replace(" ", "T")) if ts_str else datetime.now(timezone.utc)
+                    except Exception:
+                        ts = datetime.now(timezone.utc)
+                    
+                    event = RFIDEvent(
+                        reader_id=1,
+                        antenna_id=ant,
+                        epc=epc,
+                        rssi_dbm=rssi_dbm,
+                        phase_angle_rad=0.0,
+                        doppler_shift_hz=0.0,
+                        read_count=item.get("count", 1),
+                        source="PHYSICAL",
+                        timestamp=ts
+                    )
+                    db.add(event)
+                    inserted += 1
+            db.commit()
+            print(f"Ingested {inserted} live gateway events into database.")
+    except Exception as e:
+        print(f"Gateway telemetry history notice: {e}")
 
 def _seed_handheld_and_wms(db: Session, now: datetime):
     try:
@@ -424,8 +525,8 @@ def _seed_handheld_and_wms(db: Session, now: datetime):
         # Seed Handheld Scan Sessions
         if db.query(HandheldScanSession).count() == 0:
             hh = db.query(HandheldDevice).first()
-            s1 = db.query(Shelf).first()
-            s2 = db.query(Shelf).offset(1).first() or s1
+            s1 = db.query(Shelf).filter(Shelf.shelf_code == "SHELF_A").first()
+            s2 = db.query(Shelf).filter(Shelf.shelf_code == "SHELF_B").first() or s1
             ses1 = HandheldScanSession(
                 session_code="SCAN-00104",
                 device_id=hh.id if hh else None,
@@ -434,27 +535,13 @@ def _seed_handheld_and_wms(db: Session, now: datetime):
                 target_shelf_code=s1.shelf_code if s1 else "SHELF_A",
                 status="COMPLETED",
                 scan_mode="DISCREPANCY_VERIFICATION",
-                total_scans=124,
-                unique_epcs=124,
+                total_scans=38,
+                unique_epcs=38,
                 started_at=now - timedelta(hours=5),
                 completed_at=now - timedelta(hours=4, minutes=45),
-                notes="Morning ground truth physical verification of Shelf A"
+                notes="Ground truth physical verification of live UHF tags"
             )
-            ses2 = HandheldScanSession(
-                session_code="SCAN-00105",
-                device_id=hh.id if hh else None,
-                operator_name="Elena Rostova",
-                shelf_id=s2.id if s2 else None,
-                target_shelf_code=s2.shelf_code if s2 else "SHELF_B",
-                status="COMPLETED",
-                scan_mode="CYCLE_COUNT",
-                total_scans=56,
-                unique_epcs=56,
-                started_at=now - timedelta(hours=1),
-                completed_at=now - timedelta(minutes=40),
-                notes="Targeted verification of high-value components"
-            )
-            db.add_all([ses1, ses2])
+            db.add(ses1)
             db.flush()
 
         # Seed WMS Inventory mirroring expected items
@@ -468,7 +555,7 @@ def _seed_handheld_and_wms(db: Session, now: datetime):
                     product_id=item.product_id,
                     expected_shelf_id=item.expected_location_id,
                     quantity=1,
-                    lot_number="LOT-2026-A",
+                    lot_number="LOT-2026-LIVE",
                     status="AVAILABLE",
                     updated_at=now
                 )
@@ -509,13 +596,13 @@ def _seed_handheld_and_wms(db: Session, now: datetime):
             s1 = shelves[0].id if shelves else 1
             tx1 = WMSTransaction(
                 transaction_type="RECEIPT",
-                epc="EPC-9001",
+                epc="30341ADB10521280257A10A9",
                 sku="SKU-1001",
                 to_shelf_id=s1,
                 quantity=1,
                 user_name="Alex Rivera",
                 reference_code="PO-44819",
-                notes="Initial receipt from vendor container",
+                notes="Initial receipt from vendor container into Shelf A",
                 timestamp=now - timedelta(days=1)
             )
             db.add(tx1)
@@ -525,34 +612,3 @@ def _seed_handheld_and_wms(db: Session, now: datetime):
     except Exception as e:
         db.rollback()
         print(f"Handheld & WMS seed notice: {e}")
-
-def _sync_simulator_with_db(db: Session):
-    sim = reader_manager.get_simulator()
-    # 1. Dynamically sync all shelves into simulator positions
-    shelves = db.query(Shelf).all()
-    for s in shelves:
-        if s.shelf_code not in sim.shelf_positions:
-            sim.shelf_positions[s.shelf_code] = s.coord_x if s.coord_x else (2.0 + s.id * 3.0)
-    
-    # 2. Dynamically sync active antenna-to-shelf mappings
-    antennas = db.query(Antenna).all()
-    for a in antennas:
-        if a.shelf:
-            sim.antenna_shelf_map[a.port_number] = a.shelf.shelf_code
-            sim.antenna_id_map[a.port_number] = a.id
-
-    # 3. Dynamically sync all inventory tags into physical simulation states
-    items = db.query(Inventory).all()
-    for it in items:
-        shelf_code = it.observed_shelf.shelf_code if it.observed_shelf else (it.expected_shelf.shelf_code if it.expected_shelf else "SHELF_A")
-        is_pres = (it.status != "LIKELY_MISSING")
-        is_shad = (it.status == "POSSIBLE_UNREAD")
-        pkg = it.tag.packaging_class if it.tag else "CARDBOARD"
-        sim.register_simulated_tag(
-            epc=it.epc,
-            physical_shelf=shelf_code,
-            is_present=is_pres,
-            is_shadowed=is_shad,
-            packaging=pkg
-        )
-

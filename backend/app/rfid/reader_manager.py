@@ -3,9 +3,8 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
-from app.rfid.simulator import UHFHardwareSimulator
 from app.rfid.reader_adapter import AbstractReaderAdapter
-from app.rfid.llrp_adapter import LLRPReaderAdapter
+from app.rfid.gateway_adapter import GatewayReaderAdapter
 from app.rfid.operating_mode import mode_manager, OperatingMode
 from app.core.config import settings
 
@@ -13,11 +12,8 @@ logger = logging.getLogger("rfid_warehouse")
 
 class ReaderManager:
     """
-    Manages physical UHF RFID reader adapters and RF physics simulators.
-    Enforces strict isolation between operating modes:
-    - SIMULATION: routes to UHFHardwareSimulator
-    - PHYSICAL: routes to LLRPReaderAdapter (direct socket to reader)
-    - OFFLINE: suspends active collection
+    Manages physical UHF RFID reader telemetry via the Aperture Venture Studio Gateway.
+    Directly interfaces with reader 100EHH5323020053 across Antenna Ports 1 & 2.
     """
 
     _instance = None
@@ -32,60 +28,46 @@ class ReaderManager:
         if getattr(self, "_initialized", False):
             return
 
-        self.default_simulator = UHFHardwareSimulator(
+        self.gateway_adapter = GatewayReaderAdapter(
             reader_code=settings.RFID_READER_ID,
-            ip_address=settings.RFID_READER_HOST,
-            port=settings.RFID_READER_PORT
+            gateway_url=settings.RFID_GATEWAY_URL
         )
-
-        self.physical_adapter = LLRPReaderAdapter(
-            reader_code=settings.RFID_READER_ID,
-            ip_address=settings.RFID_READER_HOST,
-            port=settings.RFID_READER_PORT,
-            reconnect_interval_sec=settings.RFID_RECONNECT_INTERVAL_SEC,
-            connect_timeout_sec=settings.RFID_CONNECT_TIMEOUT_SEC
-        )
+        self.physical_adapter = self.gateway_adapter
 
         self._initialized = True
         logger.info(
-            f"ReaderManager initialized with Physical Adapter ({settings.RFID_READER_HOST}:{settings.RFID_READER_PORT}) "
-            f"and Physics Simulator. Default mode: {mode_manager.current_mode.value}"
+            f"ReaderManager initialized with Aperture Gateway Adapter ({settings.RFID_GATEWAY_URL}) "
+            f"for Reader {settings.RFID_READER_ID}. Active mode: {mode_manager.current_mode.value}"
         )
 
-    def get_simulator(self) -> UHFHardwareSimulator:
-        return self.default_simulator
-
-    def get_physical_adapter(self) -> LLRPReaderAdapter:
-        return self.physical_adapter
+    def get_physical_adapter(self) -> GatewayReaderAdapter:
+        return self.gateway_adapter
 
     def get_active_adapter(self) -> Optional[AbstractReaderAdapter]:
-        """Returns the appropriate adapter based on current operating mode."""
+        """Returns the active gateway adapter based on current operating mode."""
         mode = mode_manager.current_mode
-        if mode == OperatingMode.SIMULATION:
-            return self.default_simulator
-        elif mode == OperatingMode.PHYSICAL:
-            return self.physical_adapter
-        elif mode == OperatingMode.OFFLINE:
+        if mode == OperatingMode.OFFLINE:
             return None
-        return self.default_simulator
+        return self.gateway_adapter
 
-    def get_reader(self, reader_code: str = "READER_01") -> Optional[AbstractReaderAdapter]:
+    def get_reader(self, reader_code: str = "100EHH5323020053") -> Optional[AbstractReaderAdapter]:
         return self.get_active_adapter()
 
     async def get_all_health(self) -> List[Dict[str, Any]]:
         mode = mode_manager.current_mode
-        sim_health = await self.default_simulator.get_health_status()
-        sim_health["operating_mode"] = "SIMULATION"
-        sim_health["active_mode"] = (mode == OperatingMode.SIMULATION)
-
-        phys_health = await self.physical_adapter.get_health_status()
-        phys_health["operating_mode"] = "PHYSICAL"
+        phys_health = await self.gateway_adapter.get_health_status()
+        phys_health["operating_mode"] = mode.value
         phys_health["active_mode"] = (mode == OperatingMode.PHYSICAL)
-
-        return [sim_health, phys_health]
+        return [phys_health]
 
     async def test_physical_connection(self) -> Dict[str, Any]:
-        """Directly probes the physical hardware reader socket without mock claims."""
-        return await self.physical_adapter.test_physical_connection()
+        """Probes the live Aperture Gateway API endpoint."""
+        is_ok = await self.gateway_adapter.connect()
+        return {
+            "success": is_ok,
+            "status": "CONNECTED" if is_ok else "DISCONNECTED",
+            "reader_code": self.gateway_adapter.reader_code,
+            "endpoint": self.gateway_adapter.latest_url
+        }
 
 reader_manager = ReaderManager()

@@ -93,7 +93,7 @@ export const AssignTagModal: React.FC<AssignTagModalProps> = ({
             >
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.sku} — {p.name} (${p.unit_cost?.toFixed(2)})
+                  {p.sku} — {p.name}
                 </option>
               ))}
             </select>

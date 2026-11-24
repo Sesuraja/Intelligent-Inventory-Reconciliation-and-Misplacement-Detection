@@ -12,7 +12,6 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
   const [sku, setSku] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Automotive');
-  const [unitCost, setUnitCost] = useState('45.00');
   const [minStock, setMinStock] = useState('5');
   const [unit, setUnit] = useState('units');
   const [description, setDescription] = useState('');
@@ -38,7 +37,6 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
         sku: sku.trim().toUpperCase(),
         name: name.trim(),
         category: category.trim(),
-        unit_cost: parseFloat(unitCost) || 0.0,
         min_stock: parseInt(minStock) || 5,
         unit: unit.trim(),
         description: description.trim() || undefined
@@ -130,21 +128,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({ isOpen, 
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Unit Cost ($)</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={unitCost}
-                  onChange={(e) => setUnitCost(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                />
-              </div>
-            </div>
-
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Min Reorder Level</label>
               <input

@@ -51,6 +51,19 @@ def get_locations(db: Session = Depends(get_db)):
         ))
     return results
 
+@router.patch("/warehouses/{id}")
+def update_warehouse(id: int, updates: dict, db: Session = Depends(get_db)):
+    """Updates warehouse facility details (name, code, description)."""
+    wh = db.query(Warehouse).filter(Warehouse.id == id).first()
+    if not wh:
+        raise HTTPException(status_code=404, detail="Warehouse not found")
+    for key, val in updates.items():
+        if hasattr(wh, key) and key != "id":
+            setattr(wh, key, val)
+    db.commit()
+    db.refresh(wh)
+    return {"id": wh.id, "name": wh.name, "code": wh.code, "description": wh.description}
+
 @router.get("/shelves", response_model=List[ShelfResponse])
 @router.get("/locations/shelves", response_model=List[ShelfResponse])
 def get_shelves(db: Session = Depends(get_db)):
@@ -102,11 +115,6 @@ def create_shelf(shelf_in: ShelfCreate, db: Session = Depends(get_db)):
     db.add(new_shelf)
     db.commit()
     db.refresh(new_shelf)
-
-    # Register with simulator shelf positions
-    sim = reader_manager.get_simulator()
-    if new_shelf.shelf_code not in sim.shelf_positions:
-        sim.shelf_positions[new_shelf.shelf_code] = 15.0 + (new_shelf.id * 3.0)
 
     return ShelfResponse(
         id=new_shelf.id,
@@ -173,6 +181,31 @@ def create_zone(name: str, code: str, warehouse_id: int = 1, db: Session = Depen
     db.commit()
     db.refresh(z)
     return {"id": z.id, "warehouse_id": z.warehouse_id, "code": z.code, "name": z.name}
+
+@router.patch("/zones/{id}")
+def update_zone(id: int, updates: dict, db: Session = Depends(get_db)):
+    """Updates warehouse zone parameters."""
+    z = db.query(Zone).filter(Zone.id == id).first()
+    if not z:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    for key, val in updates.items():
+        if hasattr(z, key) and key != "id":
+            if key == "code" and isinstance(val, str):
+                val = val.upper()
+            setattr(z, key, val)
+    db.commit()
+    db.refresh(z)
+    return {"id": z.id, "warehouse_id": z.warehouse_id, "code": z.code, "name": z.name}
+
+@router.delete("/zones/{id}")
+def delete_zone(id: int, db: Session = Depends(get_db)):
+    """Deletes a warehouse zone."""
+    z = db.query(Zone).filter(Zone.id == id).first()
+    if not z:
+        raise HTTPException(status_code=404, detail="Zone not found")
+    db.delete(z)
+    db.commit()
+    return {"success": True, "message": f"Zone {id} deleted successfully"}
 
 @router.get("/bins")
 def get_bins(db: Session = Depends(get_db)):

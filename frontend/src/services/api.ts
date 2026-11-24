@@ -164,6 +164,9 @@ export const api = {
   // AI & Models
   getAIModels: () => fetchCachedJSON<AIModelItem[]>('/ai/models', 20000),
   getAIEvaluation: () => fetchCachedJSON<any>('/ai/evaluation', 20000),
+  getAIBaselineComparison: () => fetchJSON<any>('/ai/baseline-comparison'),
+  configureBaselineThresholds: (zoneKey: string, timeoutSec: number, minSweeps: number, minRssi: number) =>
+    fetchJSON<any>(`/ai/baseline-thresholds?zone_key=${encodeURIComponent(zoneKey)}&timeout_seconds=${timeoutSec}&min_sweeps=${minSweeps}&min_rssi=${minRssi}`, { method: 'POST' }),
   retrainModel: (id: number) => fetchJSON<any>(`/ai/models/${id}/retrain`, { method: 'POST' }),
   getDemandForecast: () => fetchJSON<DemandForecastItem[]>('/ai/demand-forecast'),
   getCycleCountingPriorities: () => fetchJSON<CycleCountingItem[]>('/ai/cycle-counting'),
@@ -176,14 +179,6 @@ export const api = {
   // Reports
   getReconciliationReport: () => fetchJSON<any>('/reports/reconciliation'),
   getAccuracyReport: () => fetchJSON<any>('/reports/accuracy'),
-
-  // Hardware Simulator Controls
-  getSimulatorStatus: () => fetchJSON<any>('/simulator/status'),
-  executeSimulatorAction: (action: string, epc?: string, target_shelf?: string, enabled?: boolean) =>
-    fetchJSON<any>('/simulator/action', {
-      method: 'POST',
-      body: JSON.stringify({ action, epc, target_shelf, enabled })
-    }),
 
   // System Mode & Hardware Verification
   getOperatingMode: () =>
@@ -286,12 +281,31 @@ export const api = {
   updateShelf: (id: number, updates: Partial<ShelfItem>) => {
     invalidateApiCache('/locations/shelves');
     invalidateApiCache('/shelves');
+    invalidateApiCache('/locations');
     return fetchJSON<ShelfItem>(`/locations/shelves/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
   },
   deleteShelf: (id: number) => {
     invalidateApiCache('/locations/shelves');
     invalidateApiCache('/shelves');
+    invalidateApiCache('/locations');
     return fetchJSON<any>(`/locations/shelves/${id}`, { method: 'DELETE' });
+  },
+  updateWarehouse: (id: number, updates: { name?: string; code?: string; description?: string }) => {
+    invalidateApiCache('/locations');
+    return fetchJSON<any>(`/warehouses/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+  },
+  getZones: () => fetchJSON<any[]>('/zones'),
+  createZone: (data: { name: string; code: string; warehouse_id?: number }) => {
+    invalidateApiCache('/locations');
+    return fetchJSON<any>(`/zones?name=${encodeURIComponent(data.name)}&code=${encodeURIComponent(data.code)}&warehouse_id=${data.warehouse_id || 1}`, { method: 'POST' });
+  },
+  updateZone: (id: number, updates: { name?: string; code?: string }) => {
+    invalidateApiCache('/locations');
+    return fetchJSON<any>(`/zones/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
+  },
+  deleteZone: (id: number) => {
+    invalidateApiCache('/locations');
+    return fetchJSON<any>(`/zones/${id}`, { method: 'DELETE' });
   },
   updateReader: (id: number, updates: Partial<ReaderItem>) => {
     invalidateApiCache('/readers');
@@ -302,6 +316,7 @@ export const api = {
     return fetchJSON<AntennaItem>(`/antennas/${id}`, { method: 'PATCH', body: JSON.stringify(updates) });
   },
   getSystemSettings: () => fetchJSON<any>('/system/settings'),
+  getHealthDiagnostic: () => fetchJSON<any>('/system/health-diagnostic'),
   updateSystemSettings: (data: any) =>
     fetchJSON<any>('/system/settings', { method: 'POST', body: JSON.stringify(data) }),
   testConnection: async (host?: string) => {
@@ -312,6 +327,57 @@ export const api = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return { status: data.status, latencyMs: dt };
+  },
+
+  // System Lifecycle
+  reseedSystem: () => fetchJSON<any>('/system/reseed', { method: 'POST' }),
+  getSystemHealth: () => fetchJSON<any>('/system/health'),
+
+  // Alerts Management Module
+  getAlerts: (status?: string) =>
+    fetchJSON<any[]>(`/alerts${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  acknowledgeAlert: (id: string, user: string = 'operator') =>
+    fetchJSON<any>(`/alerts/${id}/acknowledge?user=${encodeURIComponent(user)}`, { method: 'POST' }),
+  snoozeAlert: (id: string, minutes: number = 30) =>
+    fetchJSON<any>(`/alerts/${id}/snooze?snooze_minutes=${minutes}`, { method: 'POST' }),
+  resolveAlert: (id: string, user: string = 'operator') =>
+    fetchJSON<any>(`/alerts/${id}/resolve?user=${encodeURIComponent(user)}`, { method: 'POST' }),
+
+  // Prioritized Cycle Counting Workflow
+  generateCycleCount: (payload: { time_budget_minutes: number; created_by: string; min_risk_threshold?: number }) =>
+    fetchJSON<any>('/cycle-counts/generate', { method: 'POST', body: JSON.stringify(payload) }),
+  getCycleCounts: () => fetchJSON<any[]>('/cycle-counts'),
+  getCycleCount: (id: string) => fetchJSON<any>(`/cycle-counts/${id}`),
+  assignCycleCount: (id: string, assignedTo: string) =>
+    fetchJSON<any>(`/cycle-counts/${id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ assigned_to: assignedTo })
+    }),
+  scanCycleCountTask: (taskId: string, scannedEpcs: string[], operator: string) =>
+    fetchJSON<any>(`/cycle-counts/tasks/${taskId}/scan`, {
+      method: 'POST',
+      body: JSON.stringify({ scanned_epcs: scannedEpcs, operator })
+    }),
+  closeCycleCount: (id: string, operator: string) =>
+    fetchJSON<any>(`/cycle-counts/${id}/close?operator=${encodeURIComponent(operator)}`, { method: 'POST' }),
+
+  // System Settings & Thresholds
+  getSettingsCategories: () => fetchJSON<any>('/settings'),
+  updateSettingsCategory: (category: string, payload: { category: string; value: any; admin_user?: string }) =>
+    fetchJSON<any>(`/settings/${category}`, { method: 'PUT', body: JSON.stringify(payload) }),
+
+  // Safe Manual Override with Audit Log
+  overrideException: (
+    id: number,
+    payload: { override_state: string; confirmation: boolean; reason: string; supervisor_name: string }
+  ) => fetchJSON<any>(`/exceptions/${id}/override`, { method: 'POST', body: JSON.stringify(payload) }),
+
+  // Dated Test Report
+  getDatedTestReport: (format: 'json' | 'markdown' = 'json') => {
+    const baseUrl = getBaseUrl();
+    return fetch(`${baseUrl}/reports/dated-test-report?format=${format}`).then((r) =>
+      format === 'markdown' ? r.text() : r.json()
+    );
   }
 };
 

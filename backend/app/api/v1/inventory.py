@@ -62,7 +62,6 @@ def get_inventory(
             product_name=prod.name,
             product_sku=prod.sku,
             category=prod.category,
-            unit_cost=prod.unit_cost,
             expected_location_id=item.expected_location_id,
             expected_shelf_code=item.expected_shelf.shelf_code if item.expected_shelf else "UNKNOWN",
             observed_location_id=item.observed_location_id,
@@ -93,7 +92,6 @@ def get_inventory_item(id: int, db: Session = Depends(get_db)):
         product_name=prod.name,
         product_sku=prod.sku,
         category=prod.category,
-        unit_cost=prod.unit_cost,
         expected_location_id=item.expected_location_id,
         expected_shelf_code=item.expected_shelf.shelf_code if item.expected_shelf else "UNKNOWN",
         observed_location_id=item.observed_location_id,
@@ -497,17 +495,6 @@ def assign_tag_to_product(req: AssignTagRequest, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(inv)
-
-    # Register in physical UHF simulator
-    sim = reader_manager.get_simulator()
-    is_shadowed = req.packaging_class.upper() in ["METAL_SHIELDED", "LIQUID_PROXIMITY"]
-    sim.register_simulated_tag(
-        epc=epc,
-        physical_shelf=shelf.shelf_code,
-        is_present=True,
-        is_shadowed=is_shadowed,
-        packaging=req.packaging_class
-    )
 
     return {
         "success": True,

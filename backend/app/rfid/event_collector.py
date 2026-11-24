@@ -32,10 +32,15 @@ class RFIDEventCollector:
     def __init__(self, poll_interval_seconds: float = 2.0, window_duration_seconds: int = 10):
         self.poll_interval = poll_interval_seconds
         self.window_duration = window_duration_seconds
+        # Multiple aggregation windows supported per Section 2.1: 5s, 10s, 15s, 30s
+        self.aggregation_windows: List[int] = [5, 10, 15, 30]
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
         self.recent_events_buffer: List[Dict[str, Any]] = []
         self.last_reconciliation_time = datetime.now(timezone.utc)
+        self.last_heartbeat_time = datetime.now(timezone.utc)
+        self.reader_outage_detected = False
+        self.heartbeat_timeout_seconds = 15.0
         self.last_physical_reconnect_attempt = 0.0
 
     async def start(self):
@@ -88,7 +93,13 @@ class RFIDEventCollector:
 
         raw_observations = await adapter.poll_observations()
         if not raw_observations:
+            # Check reader outage based on heartbeat timeout
+            if (now - self.last_heartbeat_time).total_seconds() > self.heartbeat_timeout_seconds:
+                self.reader_outage_detected = True
             return
+
+        self.last_heartbeat_time = now
+        self.reader_outage_detected = False
 
         db: Session = SessionLocal()
         try:
@@ -195,36 +206,38 @@ class RFIDEventCollector:
                 epc_groups[epc] = []
             epc_groups[epc].append(evt)
 
-        window_start = now - timedelta(seconds=self.window_duration)
         for epc, evts in epc_groups.items():
-            rssis = [e["rssi_dbm"] for e in evts]
-            med_rssi = float(np.median(rssis)) if rssis else -90.0
+            for duration in self.aggregation_windows:
+                w_start = now - timedelta(seconds=duration)
+                w_evts = [e for e in evts if e.get("observed_at", now) >= w_start]
+                w_rssis = [e["rssi_dbm"] for e in w_evts]
+                w_med_rssi = float(np.median(w_rssis)) if w_rssis else -90.0
 
-            # Count by antenna port
-            port_counts = {}
-            for e in evts:
-                port = e.get("raw_payload", {}).get("antenna_port", e["antenna_id"])
-                port_counts[port] = port_counts.get(port, 0) + 1
+                w_port_counts = {}
+                for e in w_evts:
+                    port = e.get("raw_payload", {}).get("antenna_port", e["antenna_id"])
+                    w_port_counts[port] = w_port_counts.get(port, 0) + 1
 
-            primary_port = max(port_counts, key=port_counts.get) if port_counts else 1
+                w_primary_port = max(w_port_counts, key=w_port_counts.get) if w_port_counts else 1
 
-            obs_window = ObservationWindow(
-                epc=epc,
-                window_start=window_start,
-                window_end=now,
-                features={
-                    "total_reads": len(evts),
-                    "antenna_port_counts": port_counts,
-                    "median_rssi_dbm": round(med_rssi, 1),
-                    "rssi_variance": round(float(np.var(rssis)), 2) if len(rssis) > 1 else 0.0
-                },
-                primary_antenna_id=primary_port,
-                total_read_count=len(evts),
-                median_rssi=round(med_rssi, 1),
-                source=source,
-                created_at=now
-            )
-            db.add(obs_window)
+                obs_window = ObservationWindow(
+                    epc=epc,
+                    window_start=w_start,
+                    window_end=now,
+                    features={
+                        "window_duration_seconds": duration,
+                        "total_reads": len(w_evts),
+                        "antenna_port_counts": w_port_counts,
+                        "median_rssi_dbm": round(w_med_rssi, 1),
+                        "rssi_variance": round(float(np.var(w_rssis)), 2) if len(w_rssis) > 1 else 0.0
+                    },
+                    primary_antenna_id=w_primary_port,
+                    total_read_count=len(w_evts),
+                    median_rssi=round(w_med_rssi, 1),
+                    source=source,
+                    created_at=now
+                )
+                db.add(obs_window)
         try:
             db.commit()
         except Exception:

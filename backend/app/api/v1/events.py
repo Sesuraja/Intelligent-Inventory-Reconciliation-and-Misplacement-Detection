@@ -6,6 +6,7 @@ from datetime import datetime
 from app.core.database import get_db
 from app.models.rfid_event import RFIDEvent
 from app.schemas.rfid_event import RFIDEventResponse
+from app.core.device_auth import verify_device_ingest_auth
 
 router = APIRouter(prefix="/rfid-events", tags=["Events"])
 
@@ -103,8 +104,15 @@ def get_rfid_event_by_id(id: int, db: Session = Depends(get_db)):
     )
 
 @router.post("/ingest")
-async def ingest_raw_rfid_event(event_data: dict, db: Session = Depends(get_db)):
-    """Internal ingestion endpoint for edge collectors and hardware adapters."""
+async def ingest_raw_rfid_event(
+    event_data: dict,
+    device_auth: dict = Depends(verify_device_ingest_auth),
+    db: Session = Depends(get_db)
+):
+    """
+    Ingestion endpoint for edge collectors and hardware adapters.
+    Protected by per-device API key, device allow-list, and HMAC signatures.
+    """
     from app.rfid.event_validator import EventValidator
     from app.rfid.event_normalizer import EventNormalizer
     

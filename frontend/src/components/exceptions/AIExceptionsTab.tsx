@@ -74,6 +74,22 @@ export const AIExceptionsTab: React.FC<AIExceptionsTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* W1: Experimental Domain-Validation Notice */}
+      <div className="bg-amber-50/90 border border-amber-300 text-amber-900 px-4 py-3 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center space-x-2.5">
+          <span className="bg-amber-200 text-amber-950 font-bold px-2.5 py-1 rounded-md uppercase tracking-wider text-[11px] shadow-xs">
+            Experimental – Not Domain-Validated
+          </span>
+          <span className="text-xs text-amber-900 leading-relaxed font-medium">
+            AI classification and confidence scores are subject to multipath uncertainty. System abstains to <code className="bg-amber-100 font-mono px-1 rounded">uncertain_verify</code> on low signal coverage. Barcode or handheld verification is mandatory before physical adjustment.
+          </span>
+        </div>
+        <div className="flex items-center space-x-2 shrink-0">
+          <span className="text-[11px] font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-lg">
+            Validation Status: <strong className="text-amber-950 font-bold">Experimental</strong>
+          </span>
+        </div>
+      </div>
       
       {/* 5-Page Subnavigation Tabs */}
       <div className="bg-white border border-slate-200/90 p-3 rounded-2xl shadow-xs flex flex-wrap items-center justify-between gap-2">

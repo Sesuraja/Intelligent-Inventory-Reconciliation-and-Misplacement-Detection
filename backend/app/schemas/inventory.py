@@ -7,7 +7,6 @@ class ProductBase(BaseModel):
     name: str
     category: str
     unit: str = "piece"
-    unit_cost: float = 0.0
     min_stock: int = 5
     description: Optional[str] = None
 
@@ -89,7 +88,6 @@ class InventoryResponse(BaseModel):
     product_name: str
     product_sku: str
     category: str
-    unit_cost: float
     expected_location_id: int
     expected_shelf_code: str
     observed_location_id: Optional[int] = None

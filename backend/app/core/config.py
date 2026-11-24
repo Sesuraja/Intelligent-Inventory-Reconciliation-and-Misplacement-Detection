@@ -20,14 +20,29 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", str(60 * 24)))  # 24 hours
     REQUIRE_AUTH: bool = os.getenv("REQUIRE_AUTH", "false").lower() in ("true", "1", "yes")
 
-    # System Operating Mode: SIMULATION, PHYSICAL, OFFLINE
-    DEFAULT_OPERATING_MODE: str = os.getenv("OPERATING_MODE", "SIMULATION")
+    # Environment & Simulator Gate (W9)
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    ENABLE_SIMULATOR: bool = False
+
+    # System Operating Mode: PHYSICAL, OFFLINE
+    DEFAULT_OPERATING_MODE: str = os.getenv("OPERATING_MODE", "PHYSICAL")
     
-    # Fixed UHF RFID Reader Defaults
-    RFID_READER_HOST: str = os.getenv("RFID_READER_HOST", "192.168.1.100")
-    RFID_READER_PORT: int = int(os.getenv("RFID_READER_PORT", "5084"))
-    RFID_READER_PROTOCOL: str = os.getenv("RFID_READER_PROTOCOL", "LLRP")
-    RFID_READER_ID: str = os.getenv("RFID_READER_ID", "READER_01")
+    # Live Aperture Venture Studio UHF RFID Gateway
+    RFID_GATEWAY_URL: str = os.getenv("RFID_GATEWAY_URL", "https://gateway.apertureventurestudio.com")
+    RFID_GATEWAY_LATEST_ENDPOINT: str = os.getenv(
+        "RFID_GATEWAY_LATEST_ENDPOINT",
+        "https://gateway.apertureventurestudio.com/api/v1/gateway/uhfrfid/telemetry/latest"
+    )
+    RFID_GATEWAY_HISTORY_ENDPOINT: str = os.getenv(
+        "RFID_GATEWAY_HISTORY_ENDPOINT",
+        "https://gateway.apertureventurestudio.com/api/v1/gateway/uhfrfid/telemetry/history"
+    )
+
+    # Fixed UHF RFID Reader Defaults (Aperture Gateway Reader)
+    RFID_READER_HOST: str = os.getenv("RFID_READER_HOST", "gateway.apertureventurestudio.com")
+    RFID_READER_PORT: int = int(os.getenv("RFID_READER_PORT", "443"))
+    RFID_READER_PROTOCOL: str = os.getenv("RFID_READER_PROTOCOL", "HTTP_GATEWAY")
+    RFID_READER_ID: str = os.getenv("RFID_READER_ID", "100EHH5323020053")
     RFID_CONNECT_TIMEOUT_SEC: float = float(os.getenv("RFID_CONNECT_TIMEOUT_SEC", "3.0"))
     RFID_RECONNECT_INTERVAL_SEC: float = float(os.getenv("RFID_RECONNECT_INTERVAL_SEC", "5.0"))
 

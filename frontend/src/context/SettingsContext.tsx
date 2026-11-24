@@ -9,6 +9,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemTitle: 'Intelligent Inventory Reconciliation & Misplacement Detection System',
   apiHost: '',
   wsHost: '',
+  gatewayHost: 'https://gateway.apertureventurestudio.com',
+  gatewayLatestEndpoint: '/api/v1/gateway/uhfrfid/telemetry/latest',
+  gatewayHistoryEndpoint: '/api/v1/gateway/uhfrfid/telemetry/history',
+  pollingIntervalMs: 5000,
   currentUser: {
     id: 1,
     name: 'Sarah Jenkins',

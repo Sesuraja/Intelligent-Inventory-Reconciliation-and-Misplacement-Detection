@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime, timezone
 from app.rfid.event_validator import EventValidator
 from app.rfid.event_normalizer import EventNormalizer
-from app.rfid.simulator import UHFHardwareSimulator
+from app.rfid.gateway_adapter import GatewayReaderAdapter
 from app.ai.location_inference import location_engine
 from app.ai.read_reliability import read_reliability_model
 from app.ai.root_cause import root_cause_model
@@ -63,22 +63,25 @@ def test_event_normalizer():
     assert norm["event_id"].startswith("EVT-")
 
 @pytest.mark.asyncio
-async def test_uhf_hardware_simulator():
-    sim = UHFHardwareSimulator(reader_code="READER_TEST")
-    sim.register_simulated_tag("EPC-T1", physical_shelf="SHELF_A", is_present=True, is_shadowed=False)
-    sim.register_simulated_tag("EPC-T2", physical_shelf="SHELF_C", is_present=True, is_shadowed=False)
-    sim.register_simulated_tag("EPC-T3", physical_shelf="SHELF_A", is_present=False)  # Missing
+async def test_gateway_reader_adapter():
+    adapter = GatewayReaderAdapter(
+        reader_code="100EHH5323020053",
+        gateway_url="https://gateway.apertureventurestudio.com"
+    )
+    health = await adapter.get_health_status()
+    assert health["reader_code"] == "100EHH5323020053"
+    assert health["adapter_type"] == "APERTURE_HTTP_GATEWAY"
 
-    obs = await sim.poll_observations()
-    epcs_detected = {o["epc"] for o in obs}
-    assert "EPC-T1" in epcs_detected
-    assert "EPC-T2" in epcs_detected
-    assert "EPC-T3" not in epcs_detected  # Missing item emits 0 reads
-
-    # Test outage
-    sim.set_outage(True)
-    obs_outage = await sim.poll_observations()
-    assert len(obs_outage) == 0
+    # Poll live observations from gateway
+    obs = await adapter.poll_observations()
+    assert isinstance(obs, list)
+    if obs:
+        first = obs[0]
+        assert "epc" in first
+        assert "antenna_port" in first
+        assert "rssi_dbm" in first
+        assert first["rssi_dbm"] < 0
+        assert first["reader_code"] == "100EHH5323020053"
 
 def test_location_inference():
     port_shelf_map = {1: "SHELF_A", 2: "SHELF_B", 3: "SHELF_C", 4: "SHELF_D"}

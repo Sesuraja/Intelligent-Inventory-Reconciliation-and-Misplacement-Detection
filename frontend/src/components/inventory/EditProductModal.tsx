@@ -18,7 +18,6 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Automotive');
-  const [unitCost, setUnitCost] = useState('45.00');
   const [minStock, setMinStock] = useState('5');
   const [unit, setUnit] = useState('units');
   const [description, setDescription] = useState('');
@@ -29,7 +28,6 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
     if (product) {
       setName(product.name || '');
       setCategory(product.category || 'Automotive');
-      setUnitCost(product.unit_cost !== undefined ? String(product.unit_cost) : '0.00');
       setMinStock(product.min_stock !== undefined ? String(product.min_stock) : '5');
       setUnit(product.unit || 'units');
       setDescription(product.description || '');
@@ -50,7 +48,6 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
       await api.updateProduct(product.id, {
         name: name.trim(),
         category: category.trim(),
-        unit_cost: parseFloat(unitCost) || 0.0,
         min_stock: parseInt(minStock) || 5,
         unit: unit.trim(),
         description: description.trim() || undefined
@@ -105,30 +102,15 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Category</label>
-              <input
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Unit Valuation ($)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={unitCost}
-                onChange={(e) => setUnitCost(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                required
-              />
-            </div>
+          <div>
+            <label className="block font-semibold text-slate-700 mb-1">Category</label>
+            <input
+              type="text"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition"
+              required
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

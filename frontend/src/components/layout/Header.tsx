@@ -69,7 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
       case 'inventory':
         return { title: 'Inventory & WMS Master Records', desc: 'Tracked products, serialized EPC tags, shelf mappings and authorized movements' };
       case 'monitoring':
-        return { title: 'Live RFID Hardware Monitoring', desc: '4-Port antenna sweeps, raw telemetry observations, RSSI meters and physics simulator' };
+        return { title: 'Live RFID Hardware Monitoring', desc: '2-Port live antenna sweeps, raw UHF telemetry observations, signal meters and gateway status' };
       case 'exceptions':
         return { title: 'AI Discrepancy & Root-Cause Exceptions', desc: 'Automated misplacement detection, empirical evidence analysis and operator ground-truth audit' };
       case 'reports':

@@ -5,15 +5,17 @@ import {
   Activity,
   Smartphone,
   Sliders,
-  Terminal
+  Terminal,
+  Bell
 } from 'lucide-react';
 import { ReaderItem, AntennaItem, RFIDEvent, ShelfItem } from '../../types';
 import { api } from '../../services/api';
-import { ReaderAntennaStatusView } from './ReaderAntennaStatusView';
-import { LiveRFIDReadsView } from './LiveRFIDReadsView';
+import { ReaderStatusView } from './ReaderStatusView';
+import { AntennaStatusView } from './AntennaStatusView';
+import { LiveTagsView } from './LiveTagsView';
 import { HandheldScansView } from './HandheldScansView';
-import { CalibrationHealthView } from './CalibrationHealthView';
 import { EventStreamRawView } from './EventStreamRawView';
+import { AlertsManagementView } from './AlertsManagementView';
 import { AssignAntennaModal } from './AssignAntennaModal';
 
 interface LiveMonitoringTabProps {
@@ -36,7 +38,7 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
   onNavigateSubPage
 }) => {
   const [shelves, setShelves] = useState<ShelfItem[]>([]);
-  const [activeSubView, setActiveSubView] = useState<'readers' | 'reads' | 'handheld' | 'calibration' | 'stream'>('readers');
+  const [activeSubView, setActiveSubView] = useState<'readers' | 'antennas' | 'tags' | 'handheld' | 'stream' | 'alerts'>('readers');
 
   // Antenna Modal
   const [showAssignAntennaModal, setShowAssignAntennaModal] = useState(false);
@@ -47,14 +49,15 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
   }, []);
 
   useEffect(() => {
-    if (subPage === 'monitoring-reads') setActiveSubView('reads');
+    if (subPage === 'monitoring-readers') setActiveSubView('readers');
+    else if (subPage === 'monitoring-antennas') setActiveSubView('antennas');
+    else if (subPage === 'monitoring-tags' || subPage === 'monitoring-reads') setActiveSubView('tags');
     else if (subPage === 'monitoring-handheld') setActiveSubView('handheld');
-    else if (subPage === 'monitoring-calibration') setActiveSubView('calibration');
     else if (subPage === 'monitoring-stream') setActiveSubView('stream');
-    else if (subPage === 'monitoring-readers') setActiveSubView('readers');
+    else if (subPage === 'monitoring-alerts') setActiveSubView('alerts');
   }, [subPage]);
 
-  const handleSubNav = (view: 'readers' | 'reads' | 'handheld' | 'calibration' | 'stream', id: string) => {
+  const handleSubNav = (view: 'readers' | 'antennas' | 'tags' | 'handheld' | 'stream' | 'alerts', id: string) => {
     setActiveSubView(view);
     onNavigateSubPage?.(id);
   };
@@ -62,55 +65,55 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
   return (
     <div className="space-y-6">
       
-      {/* 5-Page Subnavigation Tabs */}
+      {/* 6-View Dedicated Subnavigation Tabs */}
       <div className="bg-white border border-slate-200/90 p-3 rounded-2xl shadow-xs flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl">
           <button
             onClick={() => handleSubNav('readers', 'monitoring-readers')}
             className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
               activeSubView === 'readers'
-                ? 'bg-white text-slate-900 shadow-xs font-bold'
+                ? 'bg-white text-blue-900 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Server className="w-3.5 h-3.5 text-blue-600" />
-            <span>Reader & Antenna Status</span>
+            <span>Readers</span>
           </button>
 
           <button
-            onClick={() => handleSubNav('reads', 'monitoring-reads')}
+            onClick={() => handleSubNav('antennas', 'monitoring-antennas')}
             className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-              activeSubView === 'reads'
+              activeSubView === 'antennas'
                 ? 'bg-white text-emerald-900 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Activity className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Live RFID Reads</span>
+            <Radio className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Antennas</span>
+          </button>
+
+          <button
+            onClick={() => handleSubNav('tags', 'monitoring-tags')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubView === 'tags'
+                ? 'bg-white text-indigo-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Tags</span>
           </button>
 
           <button
             onClick={() => handleSubNav('handheld', 'monitoring-handheld')}
             className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
               activeSubView === 'handheld'
-                ? 'bg-white text-indigo-900 shadow-xs font-bold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Handheld Scans</span>
-          </button>
-
-          <button
-            onClick={() => handleSubNav('calibration', 'monitoring-calibration')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-              activeSubView === 'calibration'
                 ? 'bg-white text-purple-900 shadow-xs font-bold'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Sliders className="w-3.5 h-3.5 text-purple-600" />
-            <span>Calibration & Health</span>
+            <Smartphone className="w-3.5 h-3.5 text-purple-600" />
+            <span>Handheld Scans</span>
           </button>
 
           <button
@@ -122,20 +125,38 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
             }`}
           >
             <Terminal className="w-3.5 h-3.5 text-slate-700" />
-            <span>Event Stream (Raw Data)</span>
+            <span>Event Stream (Raw)</span>
+          </button>
+
+          <button
+            onClick={() => handleSubNav('alerts', 'monitoring-alerts')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubView === 'alerts'
+                ? 'bg-white text-rose-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Bell className="w-3.5 h-3.5 text-rose-600" />
+            <span>Alerts & Faults</span>
           </button>
         </div>
 
         <div className="flex items-center space-x-2 text-xs text-slate-500 font-mono">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-          <span>LLRP Speedway 4-Port Portal Active</span>
+          <span>Aperture 2-Port UHF Gateway Active</span>
         </div>
       </div>
 
       {/* Render Active Sub-Page */}
       {activeSubView === 'readers' && (
-        <ReaderAntennaStatusView
+        <ReaderStatusView
           readers={readers}
+          onRefresh={onRefreshData}
+        />
+      )}
+
+      {activeSubView === 'antennas' && (
+        <AntennaStatusView
           antennas={antennas}
           shelves={shelves}
           onConfigureAntenna={(port) => {
@@ -146,8 +167,8 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
         />
       )}
 
-      {activeSubView === 'reads' && (
-        <LiveRFIDReadsView
+      {activeSubView === 'tags' && (
+        <LiveTagsView
           liveEvents={liveEvents}
           isLiveConnected={isLiveConnected}
           onRefresh={onRefreshData}
@@ -161,19 +182,15 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
         />
       )}
 
-      {activeSubView === 'calibration' && (
-        <CalibrationHealthView
-          antennas={antennas}
-          shelves={shelves}
-          onRefresh={onRefreshData}
-        />
-      )}
-
       {activeSubView === 'stream' && (
         <EventStreamRawView
           liveEvents={liveEvents}
           isLiveConnected={isLiveConnected}
         />
+      )}
+
+      {activeSubView === 'alerts' && (
+        <AlertsManagementView />
       )}
 
       {/* Assign Antenna Modal */}

@@ -22,7 +22,8 @@ class RootCauseModel:
         "RF_SHADOWING",
         "INCORRECT_WMS_TRANSACTION",
         "DUPLICATE_EPC_MAPPING",
-        "READER_OUTAGE"
+        "READER_OUTAGE",
+        "UNKNOWN"
     ]
 
     def __init__(self):
@@ -41,18 +42,20 @@ class RootCauseModel:
         #  has_unauthorized_movement, packaging_is_attenuating, cross_read_active,
         #  strong_reads_on_other_antenna]
 
-        for _ in range(500):
-            cause = np.random.choice(range(5))
-            if cause == 0:  # PHYSICAL_RELOCATION
+        for _ in range(600):
+            cause = np.random.choice(range(6))
+            if cause == 0:  # physical_relocation
                 row = [1.0, 0.0, 0.0, np.random.choice([0.0, 1.0]), 0.0, 0.0, 1.0]
-            elif cause == 1:  # RF_SHADOWING
+            elif cause == 1:  # rf_shadowing
                 row = [0.0, 0.0, 0.0, 0.0, 1.0, np.random.choice([0.0, 1.0]), 0.0]
-            elif cause == 2:  # INCORRECT_WMS_TRANSACTION
+            elif cause == 2:  # wms_transaction_error
                 row = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
-            elif cause == 3:  # DUPLICATE_EPC_MAPPING
+            elif cause == 3:  # duplicate_epc_mapping
                 row = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0]
-            else:  # READER_OUTAGE
+            elif cause == 4:  # reader_outage
                 row = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            else:  # unknown
+                row = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
             X.append(row)
             y.append(cause)
@@ -99,45 +102,60 @@ class RootCauseModel:
         ]])
 
         probs = self.model.predict_proba(x_vec)[0]
-        class_probs = {self.CAUSES[i]: round(float(probs[i]), 3) for i in range(len(self.CAUSES))}
+        class_probs = {c: 0.0 for c in self.CAUSES}
+        for cls_idx, p in zip(self.model.classes_, probs):
+            if 0 <= cls_idx < len(self.CAUSES):
+                class_probs[self.CAUSES[cls_idx]] = round(float(p), 3)
 
         # Deterministic checks and evidence compilation
         if not reader_online:
-            cause = "READER_OUTAGE"
+            cause = "reader_outage"
             confidence = 0.96
             class_probs = {c: 0.01 for c in self.CAUSES}
-            class_probs["READER_OUTAGE"] = 0.96
+            class_probs["reader_outage"] = 0.96
             evidence = [
                 "Hardware reader monitor indicates connection drop or power interruption",
                 f"Antennas covering {expected_shelf} are currently unpowered",
                 "Absence of signal is an artifact of reader downtime rather than stock loss"
             ]
             action = f"INSPECT_READER_CONNECTIVITY_AT_{expected_shelf}"
+            root_cause_json = {
+                "label": cause,
+                "probs": class_probs
+            }
             return {
-                "predicted_cause": cause,
+                "predicted_cause": cause.upper(),
+                "root_cause_json": root_cause_json,
                 "confidence": confidence,
                 "class_probabilities": class_probs,
                 "evidence": evidence,
+                "feature_contributions": [],
                 "recommended_action": action,
                 "uncertainty_preserved": True
             }
 
         if duplicate_mapping:
-            cause = "DUPLICATE_EPC_MAPPING"
+            cause = "duplicate_epc_mapping"
             confidence = 0.98
             class_probs = {c: 0.005 for c in self.CAUSES}
-            class_probs["DUPLICATE_EPC_MAPPING"] = 0.98
+            class_probs["duplicate_epc_mapping"] = 0.98
             evidence = [
                 f"EPC '{epc}' has been mapped to multiple distinct physical inventory records",
                 "Simultaneous tag detections in disparate zones confirm tag duplication",
                 "Violates EPC Gen2 unique serialization constraint"
             ]
             action = "QUARANTINE_TAG_AND_RESERIALIZE"
+            root_cause_json = {
+                "label": cause,
+                "probs": class_probs
+            }
             return {
-                "predicted_cause": cause,
+                "predicted_cause": cause.upper(),
+                "root_cause_json": root_cause_json,
                 "confidence": confidence,
                 "class_probabilities": class_probs,
                 "evidence": evidence,
+                "feature_contributions": [],
                 "recommended_action": action,
                 "uncertainty_preserved": True
             }
@@ -145,8 +163,8 @@ class RootCauseModel:
         if discrepancy_type == "MISPLACED" or (differs and observed_shelf):
             if unauthorized_move:
                 cause = "INCORRECT_WMS_TRANSACTION"
-                confidence = max(class_probs.get("INCORRECT_WMS_TRANSACTION", 0.85), 0.88)
-                class_probs["INCORRECT_WMS_TRANSACTION"] = confidence
+                confidence = max(class_probs.get("wms_transaction_error", 0.85), 0.88)
+                class_probs["wms_transaction_error"] = confidence
                 evidence = [
                     f"Physical product detected consistently at {observed_shelf}",
                     f"Recent movement recorded without WMS supervisor approval",
@@ -155,8 +173,8 @@ class RootCauseModel:
                 action = f"APPROVE_WMS_TRANSFER_TO_{observed_shelf}"
             else:
                 cause = "PHYSICAL_RELOCATION"
-                confidence = max(class_probs.get("PHYSICAL_RELOCATION", 0.89), 0.93)
-                class_probs["PHYSICAL_RELOCATION"] = confidence
+                confidence = max(class_probs.get("physical_relocation", 0.89), 0.93)
+                class_probs["physical_relocation"] = confidence
                 evidence = [
                     f"Repeated high-confidence detections on antenna at {observed_shelf}",
                     f"Zero detections logged from expected antenna at {expected_shelf}",
@@ -166,8 +184,8 @@ class RootCauseModel:
 
         elif discrepancy_type == "POSSIBLE_UNREAD" or packaging_attenuation:
             cause = "RF_SHADOWING"
-            confidence = max(class_probs.get("RF_SHADOWING", 0.86), 0.90)
-            class_probs["RF_SHADOWING"] = confidence
+            confidence = max(class_probs.get("rf_shadowing", 0.86), 0.90)
+            class_probs["rf_shadowing"] = confidence
             evidence = [
                 f"Product category or packaging ({packaging_class}) contains RF-blocking materials",
                 "Adjacent tags on the same shelf are successfully read",
@@ -175,26 +193,40 @@ class RootCauseModel:
             ]
             action = f"REPOSITION_TAG_FOR_BETTER_LINE_OF_SIGHT"
 
-        elif discrepancy_type == "AMBIGUOUS":
-            cause = "PHYSICAL_RELOCATION"
-            confidence = 0.65
-            class_probs["PHYSICAL_RELOCATION"] = 0.65
-            class_probs["RF_SHADOWING"] = 0.20
-            class_probs["INCORRECT_WMS_TRANSACTION"] = 0.15
-            evidence = [
-                "Tag detected simultaneously by adjacent antenna beams",
-                "RSSI differential between candidate shelves is below calibration separation threshold (6 dB)",
-                "Physical placement on shelf boundary suspected; location cannot be determined reliably"
-            ]
-            cand_str = ", ".join([c.get("shelf_code", "") for c in (candidate_shelves or [])])
-            action = f"PHYSICALLY_VERIFY_SHELF_BOUNDARY_{cand_str or expected_shelf}"
+        elif discrepancy_type in ("AMBIGUOUS", "uncertain_verify"):
+            if packaging_attenuation:
+                cause = "RF_SHADOWING"
+                confidence = 0.75
+                class_probs["rf_shadowing"] = 0.75
+                class_probs["physical_relocation"] = 0.15
+                class_probs["wms_transaction_error"] = 0.10
+                evidence = [
+                    f"Item material profile ({packaging_class}) causes severe RF attenuation/shadowing",
+                    "Evidence is inside abstain band or coverage is poor; automated misplacement rejected",
+                    "Tag may be physically present but unread due to line-of-sight obstruction"
+                ]
+                action = f"MANUAL_RESCAN_REQUIRED_AT_{expected_shelf}"
+            else:
+                cause = "UNKNOWN"
+                confidence = 0.50
+                class_probs["unknown"] = 0.50
+                class_probs["physical_relocation"] = 0.25
+                class_probs["rf_shadowing"] = 0.15
+                class_probs["wms_transaction_error"] = 0.10
+                evidence = [
+                    "Tag observation evidence is poor or inside the abstain band [0.45, 0.75]",
+                    "Signal coverage is insufficient to distinguish location definitively without manual check",
+                    "Automated relocation withheld to prevent false misplacement alarm"
+                ]
+                cand_str = ", ".join([c.get("shelf_code", "") for c in (candidate_shelves or [])])
+                action = f"MANUAL_RESCAN_REQUIRED_{cand_str or expected_shelf}"
 
         else:
             # LIKELY_MISSING
             cause = "PHYSICAL_RELOCATION"
             confidence = 0.86
-            class_probs["PHYSICAL_RELOCATION"] = 0.86
-            class_probs["RF_SHADOWING"] = 0.08
+            class_probs["physical_relocation"] = 0.86
+            class_probs["rf_shadowing"] = 0.08
             evidence = [
                 f"Zero RF detections on expected shelf {expected_shelf}",
                 "No detections logged across any other warehouse antennas",
@@ -213,20 +245,31 @@ class RootCauseModel:
             "Alternative Port Preponderance"
         ]
         feat_values = x_vec[0]
-        # Base weights tailored to root-cause decision tree
         feat_contributions = []
         for i, val in enumerate(feat_values):
-            if val > 0:
-                # Relative impact of this feature on the diagnosis
-                weight = 0.35 if i in (0, 3, 6) else (0.25 if i in (1, 4) else 0.15)
-                feat_contributions.append({
-                    "feature": feat_names[i],
-                    "value": float(val),
-                    "impact": round(weight * float(val), 3)
-                })
+            weight = 0.35 if i in (0, 3, 6) else (0.25 if i in (1, 4) else 0.15)
+            feat_contributions.append({
+                "feature": feat_names[i],
+                "value": float(val),
+                "impact": round(weight * float(val), 3),
+                "direction": "positive" if val > 0 else "negative"
+            })
+
+        # Ensure unknown probability exists and all probabilities are normalized
+        if "unknown" not in class_probs:
+            class_probs["unknown"] = 0.05
+        tot = sum(class_probs.values()) or 1.0
+        class_probs = {k: round(v / tot, 3) for k, v in class_probs.items()}
+
+        canonical_label = "wms_transaction_error" if cause == "INCORRECT_WMS_TRANSACTION" else cause.lower()
+        root_cause_json = {
+            "label": canonical_label,
+            "probs": class_probs
+        }
 
         return {
             "predicted_cause": cause,
+            "root_cause_json": root_cause_json,
             "confidence": round(confidence, 2),
             "class_probabilities": class_probs,
             "evidence": evidence,

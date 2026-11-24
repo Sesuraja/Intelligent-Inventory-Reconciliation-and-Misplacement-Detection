@@ -4,7 +4,8 @@ import {
   Cpu,
   Server,
   TrendingUp,
-  Download
+  Download,
+  FileText
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { AIModelItem } from '../../types';
@@ -13,6 +14,7 @@ import { ModelPerformanceReportView } from './ModelPerformanceReportView';
 import { ReaderPerformanceReportView } from './ReaderPerformanceReportView';
 import { CycleCountForecastView } from './CycleCountForecastView';
 import { ExportsReportView } from './ExportsReportView';
+import { DatedTestReportView } from './DatedTestReportView';
 
 interface ReportsTabProps {
   subPage?: string;
@@ -20,7 +22,7 @@ interface ReportsTabProps {
 }
 
 export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPage }) => {
-  const [activeSubView, setActiveSubView] = useState<'reconciliation' | 'performance' | 'reader' | 'forecast' | 'exports'>('reconciliation');
+  const [activeSubView, setActiveSubView] = useState<'reconciliation' | 'performance' | 'reader' | 'forecast' | 'exports' | 'dated-report'>('reconciliation');
   const [reconciliationRows, setReconciliationRows] = useState<any[]>([]);
   const [accuracyStats, setAccuracyStats] = useState<any>(null);
   const [models, setModels] = useState<AIModelItem[]>([]);
@@ -35,6 +37,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPa
     else if (subPage === 'reports-reader') setActiveSubView('reader');
     else if (subPage === 'reports-forecast') setActiveSubView('forecast');
     else if (subPage === 'reports-exports') setActiveSubView('exports');
+    else if (subPage === 'reports-dated-report') setActiveSubView('dated-report');
     else if (subPage === 'reports-reconciliation') setActiveSubView('reconciliation');
   }, [subPage]);
 
@@ -56,7 +59,7 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPa
     }
   };
 
-  const handleSubNav = (view: 'reconciliation' | 'performance' | 'reader' | 'forecast' | 'exports', id: string) => {
+  const handleSubNav = (view: 'reconciliation' | 'performance' | 'reader' | 'forecast' | 'exports' | 'dated-report', id: string) => {
     setActiveSubView(view);
     onNavigateSubPage?.(id);
   };
@@ -126,6 +129,18 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPa
             <Download className="w-3.5 h-3.5 text-slate-700" />
             <span>Exports</span>
           </button>
+
+          <button
+            onClick={() => handleSubNav('dated-report', 'reports-dated-report')}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeSubView === 'dated-report'
+                ? 'bg-white text-indigo-900 shadow-xs font-bold'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Dated Test Report</span>
+          </button>
         </div>
 
         <div className="flex items-center space-x-2 text-xs text-slate-500 font-mono">
@@ -158,6 +173,10 @@ export const ReportsTab: React.FC<ReportsTabProps> = ({ subPage, onNavigateSubPa
 
       {activeSubView === 'exports' && (
         <ExportsReportView />
+      )}
+
+      {activeSubView === 'dated-report' && (
+        <DatedTestReportView />
       )}
 
     </div>

@@ -49,6 +49,7 @@ class VerificationService:
 
         # Update discrepancy status
         discrepancy.status = "VERIFIED"
+        discrepancy.workflow_status = "verified"
 
         # Apply appropriate inventory adjustment based on physical confirmation
         if item:
@@ -137,6 +138,7 @@ class VerificationService:
             raise ValueError(f"Discrepancy ID {discrepancy_id} not found")
 
         discrepancy.status = "RESOLVED"
+        discrepancy.workflow_status = "resolved"
         discrepancy.resolved_at = now
 
         item = db.query(Inventory).filter(Inventory.epc == discrepancy.epc).first()

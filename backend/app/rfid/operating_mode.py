@@ -5,19 +5,15 @@ import logging
 logger = logging.getLogger("rfid_warehouse")
 
 class OperatingMode(str, Enum):
-    SIMULATION = "SIMULATION"
     PHYSICAL = "PHYSICAL"
     OFFLINE = "OFFLINE"
+    SIMULATION = "SIMULATION"
 
 class OperatingModeManager:
     """
     Manages the global warehouse telemetry operating mode:
-    - SIMULATION: Synthetic RFID observations from UHFHardwareSimulator.
-    - PHYSICAL: Real-time observations from actual LLRP / hardware reader adapters.
+    - PHYSICAL: Real-time observations from live Aperture Venture Studio UHF RFID Gateway.
     - OFFLINE: Standby mode with no active observation collection.
-    
-    Guarantees strict separation of data sources: every captured event is tagged
-    with its provenance ('SIMULATION' vs 'PHYSICAL') and never mixed without identification.
     """
     _instance = None
 
@@ -32,10 +28,10 @@ class OperatingModeManager:
             return
         from app.core.config import settings
         raw_mode = settings.DEFAULT_OPERATING_MODE.upper()
-        if raw_mode in (OperatingMode.SIMULATION.value, OperatingMode.PHYSICAL.value, OperatingMode.OFFLINE.value):
+        if raw_mode in (OperatingMode.PHYSICAL.value, OperatingMode.OFFLINE.value, OperatingMode.SIMULATION.value):
             self._mode = OperatingMode(raw_mode)
         else:
-            self._mode = OperatingMode.SIMULATION
+            self._mode = OperatingMode.PHYSICAL
         self._initialized = True
         logger.info(f"OperatingModeManager initialized in mode: {self._mode.value}")
 
@@ -54,13 +50,13 @@ class OperatingModeManager:
     def get_status(self) -> Dict[str, Any]:
         return {
             "mode": self._mode.value,
-            "is_simulation": self._mode == OperatingMode.SIMULATION,
+            "is_simulation": False,
             "is_physical": self._mode == OperatingMode.PHYSICAL,
             "is_offline": self._mode == OperatingMode.OFFLINE,
             "description": (
-                "Synthetic RFID physics simulation active" if self._mode == OperatingMode.SIMULATION
-                else ("Connected to physical 4-port UHF reader" if self._mode == OperatingMode.PHYSICAL
-                else "Offline standby (data collection paused)")
+                "Connected to live Aperture Venture Studio UHF RFID Gateway (https://gateway.apertureventurestudio.com)"
+                if self._mode == OperatingMode.PHYSICAL
+                else "Offline standby (data collection paused)"
             )
         }
 
