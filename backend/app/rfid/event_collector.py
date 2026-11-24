@@ -92,14 +92,15 @@ class RFIDEventCollector:
             return
 
         raw_observations = await adapter.poll_observations()
-        if not raw_observations:
-            # Check reader outage based on heartbeat timeout
+        if getattr(adapter, "is_connected", False):
+            self.last_heartbeat_time = now
+            self.reader_outage_detected = False
+        else:
             if (now - self.last_heartbeat_time).total_seconds() > self.heartbeat_timeout_seconds:
                 self.reader_outage_detected = True
-            return
 
-        self.last_heartbeat_time = now
-        self.reader_outage_detected = False
+        if not raw_observations:
+            return
 
         db: Session = SessionLocal()
         try:

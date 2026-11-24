@@ -65,7 +65,7 @@ export const LiveRFIDReadsView: React.FC<LiveRFIDReadsViewProps> = ({
             </span>
           </div>
           <p className="text-slate-500 text-[11px] mt-1">
-            Real-time UHF Gen2 EPC observation frames ingested via LLRP binary protocol and streamed over WebSockets.
+            Real-time UHF Gen2 EPC observation frames streaming live from Aperture Fixed Gateway (Reader 100EHH5323020053) via WebSockets.
           </p>
         </div>
 

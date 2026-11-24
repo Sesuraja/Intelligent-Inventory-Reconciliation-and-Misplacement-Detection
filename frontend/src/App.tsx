@@ -108,8 +108,17 @@ export function App() {
       // 1. Fetch KPI summary immediately for instantaneous dashboard render
       const sum = await api.getDashboardSummary();
       setSummary(sum);
-      if (sum.recent_events) {
+      if (sum.recent_events && sum.recent_events.length > 0) {
         setLiveEvents(sum.recent_events);
+      } else {
+        try {
+          const events = await api.getRFIDEvents(50);
+          if (events && events.length > 0) {
+            setLiveEvents(events);
+          }
+        } catch (e) {
+          console.warn('Initial events fetch notice:', e);
+        }
       }
 
       // 2. Fetch auxiliary config concurrently in background

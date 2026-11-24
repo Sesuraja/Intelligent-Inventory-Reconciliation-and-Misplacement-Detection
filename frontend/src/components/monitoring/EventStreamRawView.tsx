@@ -92,7 +92,7 @@ export const EventStreamRawView: React.FC<EventStreamRawViewProps> = ({
             </span>
           </div>
           <p className="text-slate-500 text-[11px] mt-1">
-            Raw serialized JSON and binary LLRP payload packets received directly from edge readers before deduplication and AI aggregation.
+            Raw serialized telemetry frames and observation payloads received directly from Aperture Fixed Gateway (Reader 100EHH5323020053) before deduplication and AI aggregation.
           </p>
         </div>
 

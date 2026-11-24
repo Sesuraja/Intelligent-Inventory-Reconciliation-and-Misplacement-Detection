@@ -119,6 +119,9 @@ def seed_database():
         live_reader = db.query(Reader).filter(Reader.reader_code == settings.RFID_READER_ID).first()
         if live_reader and db.query(RFIDTag).filter(RFIDTag.epc == GATEWAY_PHYSICAL_EPCS[0]).first():
             print(f"Database already seeded with Aperture UHF Gateway reader ({settings.RFID_READER_ID}).")
+            if db.query(RFIDEvent).count() == 0:
+                print("Seeding initial live gateway history events...")
+                _ingest_gateway_history(db)
             _seed_handheld_and_wms(db, datetime.now(timezone.utc))
             return
 
@@ -455,20 +458,25 @@ def seed_database():
 
 def _ingest_gateway_history(db: Session):
     """Fetches telemetry history batches from Aperture gateway and populates rfid_events."""
+    import uuid
     try:
-        url = f"{settings.RFID_GATEWAY_URL}{settings.RFID_GATEWAY_HISTORY_ENDPOINT}"
-        resp = httpx.get(url, timeout=5.0)
+        url = settings.RFID_GATEWAY_HISTORY_ENDPOINT
+        if not url.startswith("http"):
+            url = f"{settings.RFID_GATEWAY_URL.rstrip('/')}/{url.lstrip('/')}"
+        resp = httpx.get(url, timeout=10.0)
         if resp.status_code == 200:
             payload = resp.json()
             batches = payload.get("data", [])
             print(f"Fetched {len(batches)} history batches from live gateway.")
             
             inserted = 0
-            for b in batches[-10:]:  # Last 10 batches
+            for b in batches[-30:]:  # Ingest recent batches
                 batch_data = b.get("data", [])
                 for item in batch_data:
                     epc = item.get("epc")
-                    ant = item.get("ant", 1)
+                    if not epc:
+                        continue
+                    ant = int(item.get("ant", 1))
                     rssi_val = item.get("rssi", 70)
                     rssi_dbm = -abs(float(rssi_val)) if rssi_val is not None else -70.0
                     ts_str = item.get("timestamp")
@@ -478,15 +486,17 @@ def _ingest_gateway_history(db: Session):
                         ts = datetime.now(timezone.utc)
                     
                     event = RFIDEvent(
-                        reader_id=1,
+                        event_id=f"EVT-{uuid.uuid4().hex.upper()}",
+                        reader_id=settings.RFID_READER_ID,
                         antenna_id=ant,
                         epc=epc,
                         rssi_dbm=rssi_dbm,
-                        phase_angle_rad=0.0,
-                        doppler_shift_hz=0.0,
-                        read_count=item.get("count", 1),
+                        frequency=866.3,
                         source="PHYSICAL",
-                        timestamp=ts
+                        observed_at=ts,
+                        received_at=ts,
+                        valid=True,
+                        raw_payload=item
                     )
                     db.add(event)
                     inserted += 1

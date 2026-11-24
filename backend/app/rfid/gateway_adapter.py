@@ -101,6 +101,7 @@ class GatewayReaderAdapter(AbstractReaderAdapter):
         observations = []
         batch = raw_payload.get("data", {})
         items = batch.get("data", [])
+        now = datetime.now(timezone.utc)
 
         for it in items:
             epc = it.get("epc")
@@ -109,27 +110,10 @@ class GatewayReaderAdapter(AbstractReaderAdapter):
 
             ant = int(it.get("ant", 1))
             ts_str = it.get("timestamp", "")
-            sig = f"{epc}_{ant}_{ts_str}"
-
-            if sig in self._seen_signatures:
-                continue
-
-            self._seen_signatures.add(sig)
-            if len(self._seen_signatures) > self._max_signatures:
-                # Evict older signatures
-                self._seen_signatures = set(list(self._seen_signatures)[-self._max_signatures // 2:])
 
             raw_rssi = it.get("rssi", 75)
             # In UHF RFID gateway, positive RSSI indicates attenuation dBm (e.g. 75 -> -75.0 dBm)
             rssi_dbm = -abs(float(raw_rssi)) if raw_rssi is not None else -75.0
-
-            try:
-                observed_at = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
-            except Exception:
-                try:
-                    observed_at = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                except Exception:
-                    observed_at = datetime.now(timezone.utc)
 
             serial = it.get("serialno") or self.reader_code
             count = int(it.get("count", 1))
@@ -140,9 +124,9 @@ class GatewayReaderAdapter(AbstractReaderAdapter):
                 "rssi_dbm": rssi_dbm,
                 "frequency": 866.3,
                 "reader_code": serial,
-                "observed_at": observed_at,
+                "observed_at": now,
                 "count": count,
-                "raw_payload": it
+                "raw_payload": {**it, "gateway_timestamp": ts_str}
             })
 
         self.total_reads_received += len(observations)
