@@ -451,6 +451,8 @@ async def inject_test_discrepancy(payload: WMSInjectErrorRequest, db: Session = 
 
     target_shelf = payload.target_shelf_code or "SHELF_C"
     target_obj = db.query(Shelf).filter(Shelf.shelf_code == target_shelf).first()
+    if not target_obj:
+        target_obj = db.query(Shelf).first()
 
     report = {"error_type": payload.error_type, "epc": epc}
 

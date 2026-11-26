@@ -50,7 +50,7 @@ export const VerificationActionsView: React.FC<VerificationActionsViewProps> = (
     try {
       await api.resolveException(selectedException.id, {
         resolution_action: 'UPDATE_WMS_LOCATION',
-        notes: `Reconciled location to ${selectedException.observed_shelf_code || 'Shelf C'} by ${settings.currentUser.name} (${settings.currentUser.role})`
+        notes: `Reconciled location to ${selectedException.observed_shelf_code || 'UNASSIGNED'} by ${settings.currentUser.name} (${settings.currentUser.role})`
       });
       setSuccessMessage('WMS Master inventory location updated successfully to match physical shelf.');
       onRefresh();
@@ -116,7 +116,7 @@ export const VerificationActionsView: React.FC<VerificationActionsViewProps> = (
               </span>
             </div>
             <p className="text-slate-500 text-xs mt-1">
-              Expected: <strong className="text-slate-900 font-mono">{selectedException.expected_shelf_code}</strong> | Observed: <strong className="text-blue-600 font-mono">{selectedException.observed_shelf_code || 'Shelf C'}</strong>
+              Expected: <strong className="text-slate-900 font-mono">{selectedException.expected_shelf_code}</strong> | Observed: <strong className="text-blue-600 font-mono">{selectedException.observed_shelf_code || selectedException.expected_shelf_code}</strong>
             </p>
           </div>
 
@@ -165,7 +165,7 @@ export const VerificationActionsView: React.FC<VerificationActionsViewProps> = (
                     <Smartphone className="w-3.5 h-3.5 text-indigo-600" />
                     <span>Handheld Scan</span>
                   </td>
-                  <td className="py-2.5 px-4 font-bold text-slate-900">{selectedException.observed_shelf_code || 'Shelf C'}</td>
+                  <td className="py-2.5 px-4 font-bold text-slate-900">{selectedException.observed_shelf_code || selectedException.expected_shelf_code}</td>
                   <td className="py-2.5 px-4 font-sans">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                       Confirmed
@@ -180,13 +180,13 @@ export const VerificationActionsView: React.FC<VerificationActionsViewProps> = (
                     <Clock className="w-3.5 h-3.5 text-blue-600" />
                     <span>System (AI Engine)</span>
                   </td>
-                  <td className="py-2.5 px-4 font-bold text-slate-900">{selectedException.observed_shelf_code || 'Shelf C'}</td>
+                  <td className="py-2.5 px-4 font-bold text-slate-900">{selectedException.observed_shelf_code || selectedException.expected_shelf_code}</td>
                   <td className="py-2.5 px-4 font-sans">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                       Predicted
                     </span>
                   </td>
-                  <td className="py-2.5 px-4 font-sans text-slate-600">Fixed UHF Speedway R420</td>
+                  <td className="py-2.5 px-4 font-sans text-slate-600">Aperture UHF Fixed Gateway</td>
                   <td className="py-2.5 px-4 font-sans text-right text-slate-500 text-[11px]">10:30 AM</td>
                 </tr>
               </tbody>

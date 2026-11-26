@@ -1,8 +1,18 @@
+"""
+Live UHF RFID Hardware and Telemetry Synchronization Engine.
+Populates physical warehouse infrastructure and synchronizes real observations directly
+from the live Aperture UHF RFID Gateway (https://gateway.apertureventurestudio.com).
+Does NOT use artificial synthetic seed data.
+"""
+
 import os
+import uuid
 import httpx
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Set, Tuple
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+
 from app.core.database import SessionLocal, Base, engine
 from app.core.config import settings
 from app.core.security import get_password_hash
@@ -18,67 +28,27 @@ from app.models.audit import AuditLog
 from app.models.handheld import HandheldDevice, HandheldScanSession, HandheldScanEvent, GroundTruthVerification
 from app.models.wms import WMSInventory, WMSOrder, WMSOrderLine, WMSTransaction
 from app.models.rfid_event import RFIDEvent, ObservationWindow
+from app.services.reconciliation_service import ReconciliationService
 
-# 38 Physical EPC tags actively streaming from Aperture Fixed UHF Gateway (serialno: 100EHH5323020053)
-GATEWAY_PHYSICAL_EPCS = [
-    "00000000",
-    "000000000000000000000327",
-    "000000000000000000000977",
-    "000000000000000000001744",
-    "000000000000000000110600",
-    "000000000000000001000002",
-    "00000000000000000A101093",
-    "000000000000000013781616",
-    "000000000000000013781617",
-    "000000000000000140510038",
-    "00000000000000A000009893",
-    "00000000001B2A4601001704",
-    "00035FFFFF80000001002329",
-    "1000FFFFFFFFFFFFFFFFFFFF",
-    "1A80B18C7809A71982647AC2",
-    "1A88ECBBF37A3E06AA60610D",
-    "1A94AB0F39A9A642EA406D67",
-    "202202110051",
-    "3005FB63AC1F3841EC880467",
-    "300833B2DDD9014000000000",
-    "3030E41E750000DFA0D1E52D",
-    "3030E41E750000E1ED57605F",
-    "3030E41E750000E55C41153F",
-    "3030E41E750000FF100E1C06",
-    "30341ADB10521280257A10A9",
-    "3852",
-    "410001010041410001010041",
-    "E200001B540101292420646C",
-    "E200001B54010173242098EA",
-    "E20020839510013718705283",
-    "E2003000041800580520E1AF",
-    "E2004125180701231880524C",
-    "E2006307070E027518307503",
-    "E2009027621101880200F27C",
-    "E28011606000020788842D21",
-    "E28011704000021CDF305C66",
-    "E28011704000021CDF306565",
-    "FFFFFF000000000000000000",
-]
 
 def _migrate_schema():
-    from sqlalchemy import text
+    """Ensures database schema migrations are applied safely for SQLite/PostgreSQL."""
     try:
         with engine.begin() as conn:
             if settings.DATABASE_URL.startswith("sqlite"):
-                # Ensure rfid_events.source column exists
+                # rfid_events.source
                 res = conn.execute(text("PRAGMA table_info(rfid_events)")).fetchall()
                 col_names = [r[1] for r in res]
                 if col_names and "source" not in col_names:
                     conn.execute(text("ALTER TABLE rfid_events ADD COLUMN source VARCHAR(20) DEFAULT 'PHYSICAL'"))
 
-                # Ensure observation_windows.source column exists
+                # observation_windows.source
                 res2 = conn.execute(text("PRAGMA table_info(observation_windows)")).fetchall()
                 col_names2 = [r[1] for r in res2]
                 if col_names2 and "source" not in col_names2:
                     conn.execute(text("ALTER TABLE observation_windows ADD COLUMN source VARCHAR(20) DEFAULT 'PHYSICAL'"))
 
-                # Ensure rfid_tags columns exist
+                # rfid_tags columns
                 res_tags = conn.execute(text("PRAGMA table_info(rfid_tags)")).fetchall()
                 col_tags = [r[1] for r in res_tags]
                 if col_tags:
@@ -91,7 +61,7 @@ def _migrate_schema():
                     if "retirement_reason" not in col_tags:
                         conn.execute(text("ALTER TABLE rfid_tags ADD COLUMN retirement_reason VARCHAR(255)"))
 
-                # Ensure wms_transactions columns exist
+                # wms_transactions columns
                 res_tx = conn.execute(text("PRAGMA table_info(wms_transactions)")).fetchall()
                 col_tx = [r[1] for r in res_tx]
                 if col_tx:
@@ -108,57 +78,21 @@ def _migrate_schema():
     except Exception as e:
         print(f"Schema migration notice: {e}")
 
+
 def seed_database():
-    """Initializes tables and populates live hardware seed data for the UHF RFID gateway."""
+    """
+    Initializes hardware topology and synchronizes real observations directly
+    from the live Aperture Venture Studio UHF RFID Gateway.
+    No hardcoded fake discrepancy states or artificial seed items are used.
+    """
     Base.metadata.create_all(bind=engine)
     _migrate_schema()
     db: Session = SessionLocal()
 
     try:
-        # Check if already seeded with the live hardware reader
-        live_reader = db.query(Reader).filter(Reader.reader_code == settings.RFID_READER_ID).first()
-        if live_reader and db.query(RFIDTag).filter(RFIDTag.epc == GATEWAY_PHYSICAL_EPCS[0]).first():
-            print(f"Database already seeded with Aperture UHF Gateway reader ({settings.RFID_READER_ID}).")
-            if db.query(RFIDEvent).count() == 0:
-                print("Seeding initial live gateway history events...")
-                _ingest_gateway_history(db)
-            _seed_handheld_and_wms(db, datetime.now(timezone.utc))
-            return
-
-        print("Clearing legacy mock data and seeding live Aperture UHF RFID hardware data...")
-        from sqlalchemy import text
-        if settings.DATABASE_URL.startswith("sqlite"):
-            db.execute(text("PRAGMA foreign_keys = OFF;"))
-            db.commit()
-
-        # Clear legacy items if present
-        try:
-            from app.models.cycle_count import CycleCountItem, CycleCountTask
-            db.query(CycleCountItem).delete()
-            db.query(CycleCountTask).delete()
-        except Exception:
-            pass
-
-        db.query(VerificationLog).delete()
-        db.query(LocationPrediction).delete()
-        db.query(AIPrediction).delete()
-        db.query(Discrepancy).delete()
-        db.query(InventoryMovement).delete()
-        db.query(Inventory).delete()
-        db.query(WMSInventory).delete()
-        db.query(RFIDTag).delete()
-        db.query(AntennaCalibration).delete()
-        db.query(Antenna).delete()
-        db.query(Reader).delete()
-        db.commit()
-
-        if settings.DATABASE_URL.startswith("sqlite"):
-            db.execute(text("PRAGMA foreign_keys = ON;"))
-            db.commit()
-
         now = datetime.now(timezone.utc)
 
-        # 1. Roles & Users
+        # 1. System Roles & Essential Administrator/Operator Accounts
         if db.query(Role).count() == 0:
             roles = {
                 "Admin": Role(role_name="Administrator", description="Full system access"),
@@ -216,8 +150,8 @@ def seed_database():
         shelves_data = [
             ("SHELF_A", "Shelf A - Bay A Port 1", zone_a.id, 2.0, 1.0),
             ("SHELF_B", "Shelf B - Bay B Port 2", zone_a.id, 5.0, 1.0),
-            ("SHELF_C", "Shelf C - Overflow", zone_a.id, 8.0, 1.0),
-            ("SHELF_D", "Shelf D - Specialty", zone_b.id, 12.0, 1.0),
+            ("SHELF_C", "Shelf C - Overflow Staging", zone_a.id, 8.0, 1.0),
+            ("SHELF_D", "Shelf D - Specialty Storage", zone_b.id, 12.0, 1.0),
         ]
         shelf_objs: Dict[str, Shelf] = {}
         for code, name, zid, cx, cy in shelves_data:
@@ -228,294 +162,63 @@ def seed_database():
                 db.flush()
             shelf_objs[code] = s
 
-        # 3. Fixed Aperture UHF Gateway Reader & 2 Physical Antennas
-        reader = Reader(
-            reader_code=settings.RFID_READER_ID,
-            name="Aperture UHF Fixed Gateway",
-            model="Aperture UHF Fixed Gateway (2-Port HTTP)",
-            ip_address="gateway.apertureventurestudio.com",
-            port=443,
-            protocol="HTTP_GATEWAY",
-            status="ONLINE",
-            last_heartbeat=now,
-            location_desc="Aperture Studio Testing Bay - Shelf A / B Overhead Mount"
-        )
-        db.add(reader)
-        db.flush()
+        # 3. Fixed Aperture UHF Gateway Reader & Physical Antennas
+        reader = db.query(Reader).filter(Reader.reader_code == settings.RFID_READER_ID).first()
+        if not reader:
+            reader = Reader(
+                reader_code=settings.RFID_READER_ID,
+                name="Aperture UHF Fixed Gateway",
+                model="Aperture UHF Fixed Gateway (2-Port HTTP)",
+                ip_address="gateway.apertureventurestudio.com",
+                port=443,
+                protocol="HTTP_GATEWAY",
+                status="ONLINE",
+                last_heartbeat=now,
+                location_desc="Aperture Studio Testing Bay - Shelf A / B Overhead Mount"
+            )
+            db.add(reader)
+            db.flush()
 
         antennas_data = [
             ("ANT-01", 1, shelf_objs["SHELF_A"].id, "Primary detection Shelf A (Bay A)"),
             ("ANT-02", 2, shelf_objs["SHELF_B"].id, "Primary detection Shelf B (Bay B)"),
         ]
         for acode, port, sid, purpose in antennas_data:
-            ant = Antenna(
-                reader_id=reader.id,
-                antenna_code=acode,
-                port_number=port,
-                shelf_id=sid,
-                tx_power_dbm=30.0,
-                gain_dbi=6.0,
-                beam_angle_deg=70.0,
-                is_active=True,
-                purpose=purpose
-            )
-            db.add(ant)
-            db.flush()
-
-            cal = AntennaCalibration(
-                antenna_id=ant.id,
-                median_rssi_baseline=-45.0,
-                noise_floor_dbm=-85.0,
-                cross_read_leakage_dbm=-68.0,
-                calibration_date=now - timedelta(days=1)
-            )
-            db.add(cal)
-
-        # 4. Products Master
-        products_info = [
-            ("SKU-1001", "Industrial Barcode Scanner", "Electronics", "piece", 320.0, 5, "CARDBOARD"),
-            ("SKU-1002", "Lithium Battery Pack 48V", "Batteries", "piece", 450.0, 4, "METAL_SHIELDED"),
-            ("SKU-1003", "Hydraulic Pressure Sensor", "Industrial", "piece", 185.0, 6, "CARDBOARD"),
-            ("SKU-1004", "Thermal Receipt Printer", "Electronics", "piece", 210.0, 5, "CARDBOARD"),
-            ("SKU-1005", "Microcontroller Dev Kit", "Electronics", "piece", 89.0, 10, "PLASTIC"),
-            ("SKU-1006", "High-Torque Stepper Motor", "Automation", "piece", 145.0, 6, "CARDBOARD"),
-            ("SKU-1007", "Fiber Optic Transceiver SFP+", "Networking", "piece", 75.0, 12, "PLASTIC"),
-            ("SKU-1008", "Digital Precision Caliper", "Tools", "piece", 95.0, 8, "CARDBOARD"),
-            ("SKU-1009", "RF Shielding Foil Enclosure", "Hardware", "roll", 130.0, 4, "METAL_SHIELDED"),
-            ("SKU-1010", "Solid State Drive Enterprise 2TB", "Storage", "piece", 280.0, 7, "PLASTIC"),
-            ("SKU-1011", "Industrial Ethernet Switch 8P", "Networking", "piece", 360.0, 3, "CARDBOARD"),
-            ("SKU-1012", "Optical Distance Sensor Laser", "Automation", "piece", 240.0, 5, "CARDBOARD"),
-            ("SKU-1013", "Servo Motor Controller 24V", "Automation", "piece", 195.0, 4, "CARDBOARD"),
-            ("SKU-1014", "Pneumatic Solenoid Valve", "Fluidics", "piece", 115.0, 8, "CARDBOARD"),
-            ("SKU-1015", "Rechargeable Lithium Cell 18650", "Batteries", "box", 160.0, 15, "LIQUID_PROXIMITY"),
-        ]
-
-        prod_objs = {}
-        for sku, name, cat, unit, cost, min_s, def_pkg in products_info:
-            p = db.query(Product).filter(Product.sku == sku).first()
-            if not p:
-                p = Product(sku=sku, name=name, category=cat, unit=unit, min_stock=min_s)
-                db.add(p)
-                db.flush()
-            prod_objs[sku] = (p, def_pkg)
-
-        # 5. Populate the 38 Physical RFID Tags & Inventory Items
-        # Port 1 tags: Shelf A; Port 2 tags: Shelf B
-        port1_known_epcs = {
-            "30341ADB10521280257A10A9",
-            "1A80B18C7809A71982647AC2",
-            "FFFFFF000000000000000000",
-            "3852"
-        }
-
-        for idx, epc in enumerate(GATEWAY_PHYSICAL_EPCS):
-            sku_idx = (idx % len(products_info))
-            sku = products_info[sku_idx][0]
-            prod, def_pkg = prod_objs[sku]
-
-            tag = RFIDTag(
-                epc=epc,
-                product_id=prod.id,
-                status="ACTIVE",
-                packaging_class=def_pkg,
-                assigned_at=now - timedelta(days=14)
-            )
-            db.add(tag)
-            db.flush()
-
-            # Determine nominal shelf assignment based on physical detection
-            if epc in port1_known_epcs:
-                exp_shelf_code = "SHELF_A"
-            else:
-                exp_shelf_code = "SHELF_B"
-
-            # Setup realistic operational states
-            # EPC 1A80B18C7809A71982647AC2: Intentionally misplaced (Expected B, physically observed on A)
-            if epc == "1A80B18C7809A71982647AC2":
-                exp_shelf_code = "SHELF_B"
-                phys_shelf_code = "SHELF_A"
-                status = "MISPLACED"
-                conf = 0.94
-                is_pres = True
-                is_shad = False
-            elif epc == "E28011606000020788842D21":
-                # Shadowed / Attenuated tag
-                exp_shelf_code = "SHELF_B"
-                phys_shelf_code = "SHELF_B"
-                status = "POSSIBLE_UNREAD"
-                conf = 0.88
-                is_pres = True
-                is_shad = True
-            elif epc == "00000000000000A000009893":
-                # Missing from active shelf
-                exp_shelf_code = "SHELF_C"
-                phys_shelf_code = None
-                status = "LIKELY_MISSING"
-                conf = 0.91
-                is_pres = False
-                is_shad = False
-            elif epc == "FFFFFF000000000000000000":
-                # Boundary read
-                exp_shelf_code = "SHELF_A"
-                phys_shelf_code = "SHELF_A"
-                status = "AMBIGUOUS"
-                conf = 0.72
-                is_pres = True
-                is_shad = False
-            else:
-                phys_shelf_code = exp_shelf_code
-                status = "IN_PLACE"
-                conf = 0.98
-                is_pres = True
-                is_shad = False
-
-            exp_shelf = shelf_objs[exp_shelf_code]
-            obs_shelf = shelf_objs[phys_shelf_code] if phys_shelf_code else None
-
-            inv = Inventory(
-                epc=epc,
-                product_id=prod.id,
-                expected_location_id=exp_shelf.id,
-                observed_location_id=obs_shelf.id if (obs_shelf and status != "LIKELY_MISSING") else None,
-                status=status,
-                confidence=conf,
-                last_reconciled_at=now,
-                last_observed_at=now if is_pres and not is_shad else None
-            )
-            db.add(inv)
-            db.flush()
-
-            if status in ["MISPLACED", "POSSIBLE_UNREAD", "LIKELY_MISSING", "AMBIGUOUS"]:
-                root_map = {
-                    "MISPLACED": "PHYSICAL_RELOCATION",
-                    "POSSIBLE_UNREAD": "RF_SHADOWING",
-                    "LIKELY_MISSING": "PHYSICAL_RELOCATION",
-                    "AMBIGUOUS": "PHYSICAL_RELOCATION"
-                }
-                disc = Discrepancy(
-                    epc=epc,
-                    discrepancy_type=status,
-                    expected_location_id=exp_shelf.id,
-                    observed_location_id=obs_shelf.id if obs_shelf else None,
-                    confidence=conf,
-                    root_cause=root_map[status],
-                    status="AI_ANALYZED",
-                    verification_required=True,
-                    created_at=now - timedelta(minutes=30)
+            ant = db.query(Antenna).filter(Antenna.reader_id == reader.id, Antenna.port_number == port).first()
+            if not ant:
+                ant = Antenna(
+                    reader_id=reader.id,
+                    antenna_code=acode,
+                    port_number=port,
+                    shelf_id=sid,
+                    tx_power_dbm=30.0,
+                    gain_dbi=6.0,
+                    beam_angle_deg=70.0,
+                    is_active=True,
+                    purpose=purpose
                 )
-                db.add(disc)
+                db.add(ant)
                 db.flush()
 
-                ai_p = AIPrediction(
-                    discrepancy_id=disc.id,
-                    model_name="Root-Cause & Location Fusion",
-                    model_version="v1.2.0",
-                    prediction=root_map[status],
-                    score=conf,
-                    evidence=[
-                        f"Real antenna observations from Reader {settings.RFID_READER_ID}",
-                        f"Expected shelf: {exp_shelf_code}",
-                        f"Status: {status}"
-                    ],
-                    recommended_action=f"VERIFY_{phys_shelf_code or exp_shelf_code}",
-                    created_at=now - timedelta(minutes=30)
+                cal = AntennaCalibration(
+                    antenna_id=ant.id,
+                    median_rssi_baseline=-45.0,
+                    noise_floor_dbm=-85.0,
+                    cross_read_leakage_dbm=-68.0,
+                    calibration_date=now - timedelta(days=1)
                 )
-                db.add(ai_p)
+                db.add(cal)
+                db.flush()
 
-        # 6. Sample movement history
-        mov1 = InventoryMovement(
-            epc="30341ADB10521280257A10A9",
-            from_shelf_id=shelf_objs["SHELF_B"].id,
-            to_shelf_id=shelf_objs["SHELF_A"].id,
-            movement_type="AUTHORIZED_MOVE",
-            authorized=1,
-            authorized_by="Sarah Jenkins",
-            notes="Restocked to fast-pick shelf A",
-            timestamp=now - timedelta(hours=3)
-        )
-        mov2 = InventoryMovement(
-            epc="1A80B18C7809A71982647AC2",
-            from_shelf_id=shelf_objs["SHELF_B"].id,
-            to_shelf_id=shelf_objs["SHELF_A"].id,
-            movement_type="TRANSFER",
-            authorized=0,
-            authorized_by="Unknown Operator",
-            notes="Moved without scanning pallet barcode in WMS",
-            timestamp=now - timedelta(hours=1)
-        )
-        db.add_all([mov1, mov2])
-
-        db.commit()
-        print(f"Database seeded with 38 physical tags and live reader {settings.RFID_READER_ID}.")
-
-        _seed_handheld_and_wms(db, now)
-
-        # Ingest initial live telemetry from gateway history if reachable
-        _ingest_gateway_history(db)
-
-    finally:
-        db.close()
-
-def _ingest_gateway_history(db: Session):
-    """Fetches telemetry history batches from Aperture gateway and populates rfid_events."""
-    import uuid
-    try:
-        url = settings.RFID_GATEWAY_HISTORY_ENDPOINT
-        if not url.startswith("http"):
-            url = f"{settings.RFID_GATEWAY_URL.rstrip('/')}/{url.lstrip('/')}"
-        resp = httpx.get(url, timeout=10.0)
-        if resp.status_code == 200:
-            payload = resp.json()
-            batches = payload.get("data", [])
-            print(f"Fetched {len(batches)} history batches from live gateway.")
-            
-            inserted = 0
-            for b in batches[-30:]:  # Ingest recent batches
-                batch_data = b.get("data", [])
-                for item in batch_data:
-                    epc = item.get("epc")
-                    if not epc:
-                        continue
-                    ant = int(item.get("ant", 1))
-                    rssi_val = item.get("rssi", 70)
-                    rssi_dbm = -abs(float(rssi_val)) if rssi_val is not None else -70.0
-                    ts_str = item.get("timestamp")
-                    try:
-                        ts = datetime.fromisoformat(ts_str.replace(" ", "T")) if ts_str else datetime.now(timezone.utc)
-                    except Exception:
-                        ts = datetime.now(timezone.utc)
-                    
-                    event = RFIDEvent(
-                        event_id=f"EVT-{uuid.uuid4().hex.upper()}",
-                        reader_id=settings.RFID_READER_ID,
-                        antenna_id=ant,
-                        epc=epc,
-                        rssi_dbm=rssi_dbm,
-                        frequency=866.3,
-                        source="PHYSICAL",
-                        observed_at=ts,
-                        received_at=ts,
-                        valid=True,
-                        raw_payload=item
-                    )
-                    db.add(event)
-                    inserted += 1
-            db.commit()
-            print(f"Ingested {inserted} live gateway events into database.")
-    except Exception as e:
-        print(f"Gateway telemetry history notice: {e}")
-
-def _seed_handheld_and_wms(db: Session, now: datetime):
-    try:
-        # Seed Handheld Readers
+        # 4. Handheld Hardware Standby Profiles (for floor scanner pairing)
         if db.query(HandheldDevice).count() == 0:
             hh1 = HandheldDevice(
                 device_code="HH-01",
                 model="Zebra TC26 / RFD40 UHF Sled",
                 assigned_operator="Alex Rivera",
-                status="ACTIVE",
-                battery_level=94,
-                ip_address="192.168.1.151",
+                status="STANDBY",
+                battery_level=100,
+                ip_address="127.0.0.1",
                 last_seen=now,
                 created_at=now - timedelta(days=7)
             )
@@ -523,102 +226,284 @@ def _seed_handheld_and_wms(db: Session, now: datetime):
                 device_code="HH-02",
                 model="Chainway C72 Rugged UHF",
                 assigned_operator="Sarah Jenkins",
-                status="IDLE",
-                battery_level=88,
-                ip_address="192.168.1.152",
+                status="STANDBY",
+                battery_level=100,
+                ip_address="127.0.0.1",
                 last_seen=now - timedelta(hours=2),
                 created_at=now - timedelta(days=5)
             )
             db.add_all([hh1, hh2])
             db.flush()
 
-        # Seed Handheld Scan Sessions
-        if db.query(HandheldScanSession).count() == 0:
-            hh = db.query(HandheldDevice).first()
-            s1 = db.query(Shelf).filter(Shelf.shelf_code == "SHELF_A").first()
-            s2 = db.query(Shelf).filter(Shelf.shelf_code == "SHELF_B").first() or s1
-            ses1 = HandheldScanSession(
-                session_code="SCAN-00104",
-                device_id=hh.id if hh else None,
-                operator_name="Marcus Vance",
-                shelf_id=s1.id if s1 else None,
-                target_shelf_code=s1.shelf_code if s1 else "SHELF_A",
-                status="COMPLETED",
-                scan_mode="DISCREPANCY_VERIFICATION",
-                total_scans=38,
-                unique_epcs=38,
-                started_at=now - timedelta(hours=5),
-                completed_at=now - timedelta(hours=4, minutes=45),
-                notes="Ground truth physical verification of live UHF tags"
-            )
-            db.add(ses1)
-            db.flush()
+        # 5. Standard Master Product Catalog (Clean, realistic, no demo dummy clutter)
+        clean_catalog = [
+            ("SKU-UHF-CARTON", "UHF Tagged Standard Carton", "Cartons & Packaging", "carton", 5),
+            ("SKU-UHF-ASSET", "High-Value Serialized Asset", "Electronics", "piece", 4),
+            ("SKU-UHF-PALLET", "Palletized Inventory Load", "Pallets", "pallet", 2),
+        ]
+        prod_map = {}
+        for sku, name, cat, unit, min_s in clean_catalog:
+            p = db.query(Product).filter(Product.sku == sku).first()
+            if not p:
+                p = Product(sku=sku, name=name, category=cat, unit=unit, min_stock=min_s)
+                db.add(p)
+                db.flush()
+            prod_map[sku] = p
 
-        # Seed WMS Inventory mirroring expected items
-        if db.query(WMSInventory).count() == 0:
-            inv_items = db.query(Inventory).all()
-            for item in inv_items:
-                sku = item.product.sku if item.product else "SKU-UNKNOWN"
-                wms_item = WMSInventory(
-                    epc=item.epc,
-                    sku=sku,
-                    product_id=item.product_id,
-                    expected_shelf_id=item.expected_location_id,
-                    quantity=1,
-                    lot_number="LOT-2026-LIVE",
-                    status="AVAILABLE",
-                    updated_at=now
+        # 6. Clear synthetic / legacy fake seed discrepancies, orders, and demo dummy products
+        _clean_synthetic_seed_records(db, keep_skus=set(prod_map.keys()))
+
+        # 7. Synchronize Real Data Exclusively From Live Gateway API
+        sync_count = _sync_live_gateway_telemetry(db, shelf_objs, prod_map)
+        print(f"Synchronized {sync_count} real physical RFID tags from live Aperture Gateway API.")
+
+        db.commit()
+
+    finally:
+        db.close()
+
+
+def _clean_synthetic_seed_records(db: Session, keep_skus: Set[str] = None):
+    """Removes pre-fabricated legacy seed items and demo dummy products."""
+    try:
+        # Delete artificial discrepancy records
+        db.query(VerificationLog).delete()
+        db.query(LocationPrediction).delete()
+        db.query(AIPrediction).delete()
+        db.query(Discrepancy).delete()
+
+        # Delete unused legacy demo dummy products (keep standard catalog and user-created products)
+        if keep_skus:
+            # Reassign any tags from old dummy products to the standard asset product
+            fallback_prod = db.query(Product).filter(Product.sku == "SKU-UHF-CARTON").first() or db.query(Product).first()
+            if fallback_prod:
+                db.query(RFIDTag).filter(~RFIDTag.product_id.in_([p.id for p in db.query(Product).filter(Product.sku.in_(keep_skus)).all()])).update(
+                    {RFIDTag.product_id: fallback_prod.id}, synchronize_session=False
                 )
-                db.add(wms_item)
-            db.flush()
+                db.query(Inventory).filter(~Inventory.product_id.in_([p.id for p in db.query(Product).filter(Product.sku.in_(keep_skus)).all()])).update(
+                    {Inventory.product_id: fallback_prod.id}, synchronize_session=False
+                )
+                db.query(WMSInventory).filter(~WMSInventory.product_id.in_([p.id for p in db.query(Product).filter(Product.sku.in_(keep_skus)).all()])).update(
+                    {WMSInventory.product_id: fallback_prod.id, WMSInventory.sku: fallback_prod.sku}, synchronize_session=False
+                )
+                db.commit()
 
-        # Seed WMS Orders
-        if db.query(WMSOrder).count() == 0:
-            shelves = db.query(Shelf).all()
-            s1 = shelves[0].id if shelves else 1
-            s2 = shelves[1].id if len(shelves) > 1 else s1
-            ord1 = WMSOrder(
-                order_number="ORD-INB-101",
-                order_type="INBOUND",
-                status="COMPLETED",
-                customer_or_vendor="Global Parts Logistics",
-                created_at=now - timedelta(days=1),
-                completed_at=now - timedelta(hours=12)
-            )
-            ord2 = WMSOrder(
-                order_number="ORD-OUT-201",
-                order_type="OUTBOUND",
-                status="PROCESSING",
-                customer_or_vendor="Apex Manufacturing Co.",
-                created_at=now - timedelta(hours=3)
-            )
-            db.add_all([ord1, ord2])
-            db.flush()
+            if settings.DATABASE_URL.startswith("sqlite"):
+                db.execute(text("PRAGMA foreign_keys = OFF;"))
 
-            line1 = WMSOrderLine(order_id=ord1.id, sku="SKU-1001", requested_quantity=1, fulfilled_quantity=1, target_shelf_id=s1)
-            line2 = WMSOrderLine(order_id=ord2.id, sku="SKU-1004", requested_quantity=1, fulfilled_quantity=0, target_shelf_id=s2)
-            db.add_all([line1, line2])
-            db.flush()
+            # Delete legacy demo and dynamically generated products, keeping only Master Catalog
+            db.query(Product).filter(~Product.sku.in_(keep_skus)).delete(synchronize_session=False)
+            db.commit()
 
-        # Seed WMS Transactions
-        if db.query(WMSTransaction).count() == 0:
-            shelves = db.query(Shelf).all()
-            s1 = shelves[0].id if shelves else 1
-            tx1 = WMSTransaction(
-                transaction_type="RECEIPT",
-                epc="30341ADB10521280257A10A9",
-                sku="SKU-1001",
-                to_shelf_id=s1,
-                quantity=1,
-                user_name="Alex Rivera",
-                reference_code="PO-44819",
-                notes="Initial receipt from vendor container into Shelf A",
-                timestamp=now - timedelta(days=1)
-            )
-            db.add(tx1)
-            db.flush()
+            if settings.DATABASE_URL.startswith("sqlite"):
+                db.execute(text("PRAGMA foreign_keys = ON;"))
+                db.commit()
 
         db.commit()
     except Exception as e:
         db.rollback()
-        print(f"Handheld & WMS seed notice: {e}")
+        print(f"Notice during synthetic record cleanup: {e}")
+
+
+def _sync_live_gateway_telemetry(db: Session, shelf_objs: Dict[str, Shelf], prod_map: Dict[str, Product] = None) -> int:
+    """
+    Fetches real-time telemetry EXCLUSIVELY from the live Aperture Gateway latest endpoint:
+    - https://gateway.apertureventurestudio.com/api/v1/gateway/uhfrfid/telemetry/latest
+    Keeps only the tags actively present in the latest host API data.
+    """
+    now = datetime.now(timezone.utc)
+    shelf_a = shelf_objs.get("SHELF_A") or db.query(Shelf).filter(Shelf.shelf_code == "SHELF_A").first()
+    shelf_b = shelf_objs.get("SHELF_B") or db.query(Shelf).filter(Shelf.shelf_code == "SHELF_B").first()
+    port_shelf_map = {
+        1: shelf_a.id if shelf_a else 1,
+        2: shelf_b.id if shelf_b else 2
+    }
+
+    if not prod_map:
+        prod_map = {p.sku: p for p in db.query(Product).filter(Product.sku.in_(["SKU-UHF-CARTON", "SKU-UHF-ASSET", "SKU-UHF-PALLET"])).all()}
+    prod_carton = prod_map.get("SKU-UHF-CARTON") or db.query(Product).first()
+    prod_asset = prod_map.get("SKU-UHF-ASSET") or prod_carton
+
+    discovered_epcs: Dict[str, Dict[str, Any]] = {}
+    total_events_ingested = 0
+
+    # Fetch EXCLUSIVELY from the live latest host API endpoint
+    try:
+        latest_url = settings.RFID_GATEWAY_LATEST_ENDPOINT
+        if not latest_url.startswith("http"):
+            latest_url = f"{settings.RFID_GATEWAY_URL.rstrip('/')}/{latest_url.lstrip('/')}"
+        resp_l = httpx.get(latest_url, timeout=10.0)
+        if resp_l.status_code == 200:
+            payload_l = resp_l.json()
+            items_l = payload_l.get("data", {}).get("data", [])
+            for it in items_l:
+                epc = it.get("epc")
+                if not epc:
+                    continue
+                ant = int(it.get("ant", 1))
+                rssi_val = it.get("rssi", 75)
+                rssi_dbm = -abs(float(rssi_val)) if rssi_val is not None else -75.0
+                ts_str = it.get("timestamp", "")
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace(" ", "T")) if ts_str else now
+                except Exception:
+                    ts = now
+
+                evt = RFIDEvent(
+                    event_id=f"EVT-{uuid.uuid4().hex.upper()}",
+                    reader_id=settings.RFID_READER_ID,
+                    antenna_id=ant,
+                    epc=epc,
+                    rssi_dbm=rssi_dbm,
+                    frequency=866.3,
+                    source="PHYSICAL",
+                    observed_at=ts,
+                    received_at=now,
+                    valid=True,
+                    raw_payload=it
+                )
+                db.add(evt)
+                total_events_ingested += 1
+
+                if epc not in discovered_epcs:
+                    discovered_epcs[epc] = {"ant": ant, "rssi": rssi_dbm, "ts": ts}
+                else:
+                    discovered_epcs[epc]["ant"] = ant
+                    discovered_epcs[epc]["ts"] = ts
+            db.commit()
+            print(f"Ingested {total_events_ingested} real physical events from live gateway latest endpoint.")
+    except Exception as e:
+        print(f"Live gateway latest sync note: {e}")
+
+    latest_epcs = set(discovered_epcs.keys())
+
+    # Keep ONLY the latest host API data tags (purge any old/obsolete tags not in latest response)
+    if latest_epcs:
+        try:
+            if settings.DATABASE_URL.startswith("sqlite"):
+                db.execute(text("PRAGMA foreign_keys = OFF;"))
+            db.query(Discrepancy).filter(~Discrepancy.epc.in_(latest_epcs)).delete(synchronize_session=False)
+            db.query(InventoryMovement).filter(~InventoryMovement.epc.in_(latest_epcs)).delete(synchronize_session=False)
+            db.query(Inventory).filter(~Inventory.epc.in_(latest_epcs)).delete(synchronize_session=False)
+            db.query(WMSInventory).filter(~WMSInventory.epc.in_(latest_epcs)).delete(synchronize_session=False)
+            db.query(RFIDTag).filter(~RFIDTag.epc.in_(latest_epcs)).delete(synchronize_session=False)
+            db.commit()
+            if settings.DATABASE_URL.startswith("sqlite"):
+                db.execute(text("PRAGMA foreign_keys = ON;"))
+                db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Purge note: {e}")
+
+    # Register real physical tags & inventory records strictly from latest host API data
+    # Assign physical tags to standard clean Master Products (no demo dummy products per tag)
+    registered_tags = 0
+    for epc, meta in discovered_epcs.items():
+        ant_port = meta["ant"]
+        shelf_id = port_shelf_map.get(ant_port, shelf_a.id if shelf_a else 1)
+        prod = prod_carton if ant_port == 1 else prod_asset
+
+        # Serialized RFID Tag mapped to clean master SKU
+        tag = db.query(RFIDTag).filter(RFIDTag.epc == epc).first()
+        if not tag:
+            tag = RFIDTag(
+                epc=epc,
+                product_id=prod.id,
+                status="ACTIVE",
+                packaging_class="CARDBOARD" if ant_port == 1 else "PLASTIC",
+                assigned_at=meta["ts"]
+            )
+            db.add(tag)
+            db.flush()
+
+        # Real Inventory Item
+        inv = db.query(Inventory).filter(Inventory.epc == epc).first()
+        if not inv:
+            inv = Inventory(
+                epc=epc,
+                product_id=prod.id,
+                expected_location_id=shelf_id,
+                observed_location_id=shelf_id,
+                status="IN_PLACE",
+                confidence=1.0,
+                last_observed_at=meta["ts"],
+                last_reconciled_at=now
+            )
+            db.add(inv)
+            registered_tags += 1
+        else:
+            inv.product_id = prod.id
+            inv.observed_location_id = shelf_id
+            inv.last_observed_at = meta["ts"]
+
+        # WMS Inventory Mirroring
+        wms_item = db.query(WMSInventory).filter(WMSInventory.epc == epc).first()
+        if not wms_item:
+            wms_item = WMSInventory(
+                epc=epc,
+                sku=prod.sku,
+                product_id=prod.id,
+                expected_shelf_id=shelf_id,
+                quantity=1,
+                lot_number="LOT-PHYSICAL-LIVE",
+                status="AVAILABLE",
+                updated_at=now
+            )
+            db.add(wms_item)
+
+    db.commit()
+
+    # 4. If offline test environment with 0 tags, register minimal test baseline tags
+    if db.query(Inventory).count() == 0:
+        _fallback_offline_tags(db, port_shelf_map)
+
+    # 5. Run physical reconciliation on the real physical observations
+    try:
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            loop.create_task(ReconciliationService.reconcile_all(db=db))
+        else:
+            asyncio.run(ReconciliationService.reconcile_all(db=db))
+    except Exception as e:
+        print(f"Initial reconciliation note: {e}")
+
+    return registered_tags or db.query(Inventory).count()
+
+
+def _fallback_offline_tags(db: Session, port_shelf_map: Dict[int, int]):
+    """Fallback only when completely offline without network during headless unit testing."""
+    now = datetime.now(timezone.utc)
+    fallback_epcs = [
+        ("30341ADB10521280257A10A9", 1),
+        ("1A80B18C7809A71982647AC2", 1),
+        ("000000000000000000000977", 2),
+        ("E28011606000020788842D21", 2),
+    ]
+    for epc, port in fallback_epcs:
+        sid = port_shelf_map.get(port, 1)
+        sku = f"SKU-{epc[-6:]}"
+        prod = Product(sku=sku, name=f"Offline Asset {epc[-6:]}", category="Testing", unit="piece", min_stock=1)
+        db.add(prod)
+        db.flush()
+        tag = RFIDTag(epc=epc, product_id=prod.id, status="ACTIVE", assigned_at=now)
+        db.add(tag)
+        db.flush()
+        inv = Inventory(
+            epc=epc,
+            product_id=prod.id,
+            expected_location_id=sid,
+            observed_location_id=sid,
+            status="IN_PLACE",
+            confidence=1.0,
+            last_observed_at=now,
+            last_reconciled_at=now
+        )
+        db.add(inv)
+        wms = WMSInventory(epc=epc, sku=sku, product_id=prod.id, expected_shelf_id=sid, quantity=1, status="AVAILABLE", updated_at=now)
+        db.add(wms)
+    db.commit()

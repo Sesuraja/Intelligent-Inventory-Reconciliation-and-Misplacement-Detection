@@ -37,7 +37,7 @@ class Antenna(Base):
     reader = relationship("Reader", back_populates="antennas")
     shelf = relationship("Shelf", back_populates="antennas")
     calibrations = relationship("AntennaCalibration", back_populates="antenna", cascade="all, delete-orphan")
-    rfid_events = relationship("RFIDEvent", back_populates="antenna")
+    rfid_events = relationship("RFIDEvent", back_populates="antenna", cascade="all, delete-orphan")
 
 class AntennaCalibration(Base):
     __tablename__ = "antenna_calibrations"

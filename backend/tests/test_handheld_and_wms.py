@@ -242,10 +242,18 @@ def test_wms_transaction_reversal_and_approval():
 
 def test_rfid_tag_retirement_hierarchy_and_history():
     # 1. Assign tag with pallet and carton hierarchy
+    prods_resp = client.get("/api/v1/products")
+    prods = prods_resp.json() if prods_resp.status_code == 200 else []
+    target_pid = prods[0]["id"] if prods else 1
+
+    shelves_resp = client.get("/api/v1/shelves")
+    shelves = shelves_resp.json() if shelves_resp.status_code == 200 else []
+    target_sid = shelves[0]["id"] if shelves else 1
+
     res_assign = client.post("/api/v1/inventory/assign-tag", json={
         "epc": "EPC-HIERARCHY-01",
-        "product_id": 1,
-        "expected_shelf_id": 1,
+        "product_id": target_pid,
+        "expected_shelf_id": target_sid,
         "packaging_class": "CARDBOARD",
         "pallet_id": "PALLET-X100",
         "carton_id": "CARTON-C500",

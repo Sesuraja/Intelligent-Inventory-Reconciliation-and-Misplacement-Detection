@@ -33,6 +33,15 @@ export const EventStreamRawView: React.FC<EventStreamRawViewProps> = ({
   const [readerFilter, setReaderFilter] = useState('');
   const [minRssi, setMinRssi] = useState<number>(-90);
 
+  // Dynamic available antenna ports from real live stream
+  const availableAntennaPorts = Array.from(
+    new Set(
+      liveEvents
+        .map((e) => e.antenna_port || e.antenna_id)
+        .filter((p): p is number => typeof p === 'number' && p > 0)
+    )
+  ).sort((a, b) => a - b);
+
   const baseEvents = isPaused ? pausedEvents : liveEvents;
   const eventsToShow = baseEvents.filter((evt) => {
     if (epcFilter && !evt.epc.toLowerCase().includes(epcFilter.toLowerCase())) return false;
@@ -153,10 +162,11 @@ export const EventStreamRawView: React.FC<EventStreamRawViewProps> = ({
           className="px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:border-blue-500"
         >
           <option value="">All Antennas</option>
-          <option value="1">Port 1 (Shelf A)</option>
-          <option value="2">Port 2 (Shelf B)</option>
-          <option value="3">Port 3 (Shelf C)</option>
-          <option value="4">Port 4 (Shelf D)</option>
+          {availableAntennaPorts.map((p) => (
+            <option key={p} value={String(p)}>
+              Port {p}
+            </option>
+          ))}
         </select>
         <div className="flex items-center space-x-2 text-[11px] text-slate-500">
           <span>Min RSSI:</span>

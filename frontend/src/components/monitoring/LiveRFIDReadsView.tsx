@@ -29,6 +29,15 @@ export const LiveRFIDReadsView: React.FC<LiveRFIDReadsViewProps> = ({
   const [isPaused, setIsPaused] = useState(false);
   const [capturedEvents, setCapturedEvents] = useState<RFIDEvent[]>([]);
 
+  // Dynamically derive active antenna ports present in live stream
+  const availablePorts = Array.from(
+    new Set(
+      liveEvents
+        .map((e) => e.antenna_port || e.antenna_id)
+        .filter((p): p is number => typeof p === 'number' && p > 0)
+    )
+  ).sort((a, b) => a - b);
+
   // When paused, hold the current snapshot
   const displayedEvents = isPaused ? capturedEvents : liveEvents;
 
@@ -114,10 +123,11 @@ export const LiveRFIDReadsView: React.FC<LiveRFIDReadsViewProps> = ({
             className="bg-slate-50 border border-slate-200/90 rounded-xl px-3 py-1.5 text-xs text-slate-700 focus:bg-white focus:outline-none"
           >
             <option value="ALL">All Antenna Ports</option>
-            <option value="1">Port 1 (ANT-01 / Shelf A)</option>
-            <option value="2">Port 2 (ANT-02 / Shelf B)</option>
-            <option value="3">Port 3 (ANT-03 / Shelf C)</option>
-            <option value="4">Port 4 (ANT-04 / Shelf D)</option>
+            {availablePorts.map((p) => (
+              <option key={p} value={String(p)}>
+                Port {p} (Antenna {p})
+              </option>
+            ))}
           </select>
         </div>
 

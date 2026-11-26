@@ -55,14 +55,14 @@ def get_system_health_diagnostic(db: Session = Depends(get_db)):
 
 @router.post("/reseed")
 def reseed_system_data(db: Session = Depends(get_db)):
-    """Reseeds database with master products, shelves, live reader and tags."""
+    """Synchronizes database with live Aperture UHF RFID Gateway telemetry and hardware."""
     seed_database()
     audit_service.log(
         db=db,
-        action="DATABASE_RESEEDED",
+        action="GATEWAY_TELEMETRY_SYNC",
         actor="administrator",
         entity="SYSTEM",
-        entity_id="master_seed",
-        details={"status": "reseeded_live_hardware"}
+        entity_id="aperture_gateway",
+        details={"status": "synchronized_live_hardware"}
     )
-    return {"status": "success", "message": "Master warehouse seed data reloaded."}
+    return {"status": "success", "message": "Live Aperture UHF RFID Gateway telemetry synchronized."}

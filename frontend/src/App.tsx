@@ -86,10 +86,10 @@ export function App() {
 
     window.addEventListener('popstate', handlePopState);
 
-    // Periodic KPI polling fallback (every 8s)
+    // Periodic real-time synchronization every 5 seconds for telemetry, antennas, readers & KPIs
     const interval = setInterval(() => {
-      loadSummary();
-    }, 8000);
+      refreshRealtimeData();
+    }, 5000);
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
@@ -135,13 +135,42 @@ export function App() {
     }
   };
 
+  const refreshRealtimeData = async () => {
+    try {
+      const [sum, ants, rds, events] = await Promise.all([
+        api.getDashboardSummary(),
+        api.getAntennas(),
+        api.getReaders(),
+        api.getRFIDEvents(50)
+      ]);
+      setSummary(sum);
+      setAntennas(ants);
+      setReaders(rds);
+      if (events && events.length > 0) {
+        setLiveEvents(events);
+      }
+    } catch (err) {
+      console.error('Error refreshing realtime data:', err);
+    }
+  };
+
   const loadSummary = async () => {
     try {
-      // Fast polling only hits the cached summary endpoint (< 5ms)
+      // Fast polling hits summary endpoint
       const sum = await api.getDashboardSummary();
       setSummary(sum);
     } catch (err) {
       console.error('Error refreshing summary:', err);
+    }
+  };
+
+  const handleDeleteAntenna = async (id: number) => {
+    if (!window.confirm('Are you sure you want to remove this antenna?')) return;
+    try {
+      await api.deleteAntenna(id);
+      refreshRealtimeData();
+    } catch (err: any) {
+      alert(`Error removing antenna: ${err.message}`);
     }
   };
 
@@ -295,7 +324,8 @@ export function App() {
               antennas={antennas}
               liveEvents={liveEvents}
               isLiveConnected={isLiveConnected}
-              onRefreshData={loadSummary}
+              onRefreshData={refreshRealtimeData}
+              onDeleteAntenna={handleDeleteAntenna}
               subPage={currentSubPage}
               onNavigateSubPage={(subId) => handleNavigateTab('monitoring', subId as SubPageId)}
             />

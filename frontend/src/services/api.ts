@@ -139,6 +139,11 @@ export const api = {
     invalidateApiCache('/readers');
     return fetchJSON<AntennaItem>('/readers/antennas/assign', { method: 'POST', body: JSON.stringify(data) });
   },
+  deleteAntenna: (id: number) => {
+    invalidateApiCache('/antennas');
+    invalidateApiCache('/readers');
+    return fetchJSON<any>(`/readers/antennas/${id}`, { method: 'DELETE' });
+  },
 
   // Events
   getRFIDEvents: (limit: number = 50) => fetchJSON<RFIDEvent[]>(`/rfid-events?limit=${limit}`),

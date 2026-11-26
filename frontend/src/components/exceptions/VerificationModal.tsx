@@ -28,7 +28,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
   const [operatorNotes, setOperatorNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [handheldReaders, setHandheldReaders] = useState<any[]>([]);
-  const [selectedDeviceCode, setSelectedDeviceCode] = useState<string>('HH-01');
+  const [selectedDeviceCode, setSelectedDeviceCode] = useState<string>('MANUAL_AUDIT');
   const [scannedBarcode, setScannedBarcode] = useState<string>('');
 
   // Supervisor Manual Override fields
@@ -43,6 +43,8 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
         setHandheldReaders(readers);
         if (readers.length > 0) {
           setSelectedDeviceCode(readers[0].device_code);
+        } else {
+          setSelectedDeviceCode('MANUAL_AUDIT');
         }
       })
       .catch(() => {});
@@ -228,11 +230,15 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                   onChange={(e) => setSelectedDeviceCode(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-900 font-medium focus:outline-none focus:border-blue-500"
                 >
-                  {handheldReaders.map((r) => (
-                    <option key={r.id} value={r.device_code}>
-                      {r.device_code} - {r.model} ({r.assigned_operator})
-                    </option>
-                  ))}
+                  {handheldReaders.length > 0 ? (
+                    handheldReaders.map((r) => (
+                      <option key={r.id} value={r.device_code}>
+                        {r.device_code} - {r.model} ({r.assigned_operator || 'Operator'})
+                      </option>
+                    ))
+                  ) : (
+                    <option value="MANUAL_AUDIT">Manual Operator Floor Check (No Handheld Hardware Connected)</option>
+                  )}
                 </select>
               </div>
 

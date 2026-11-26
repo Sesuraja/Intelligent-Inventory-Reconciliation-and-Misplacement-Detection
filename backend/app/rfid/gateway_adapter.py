@@ -65,6 +65,24 @@ class GatewayReaderAdapter(AbstractReaderAdapter):
         logger.info("Disconnected from Aperture UHF RFID Gateway.")
 
     async def get_health_status(self) -> Dict[str, Any]:
+        from app.core.database import SessionLocal
+        from app.models.reader import Antenna
+        db = SessionLocal()
+        try:
+            ants_db = db.query(Antenna).all()
+            antenna_status = [
+                {
+                    "port": ant.port_number,
+                    "is_active": ant.is_active,
+                    "shelf": ant.shelf.name if ant.shelf else f"Shelf {ant.port_number}"
+                }
+                for ant in ants_db
+            ]
+        except Exception:
+            antenna_status = []
+        finally:
+            db.close()
+
         return {
             "reader_code": self.reader_code,
             "adapter_type": "APERTURE_HTTP_GATEWAY",
@@ -76,10 +94,7 @@ class GatewayReaderAdapter(AbstractReaderAdapter):
             "total_reads_received": self.total_reads_received,
             "last_poll_time": self.last_poll_time.isoformat() if self.last_poll_time else None,
             "last_error": self.last_error,
-            "antennas": [
-                {"port": 1, "is_active": True, "shelf": "Shelf A (Bay A)"},
-                {"port": 2, "is_active": True, "shelf": "Shelf B (Bay B)"}
-            ]
+            "antennas": antenna_status
         }
 
     async def configure_antennas(self, configs: List[Dict[str, Any]]) -> bool:

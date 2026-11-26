@@ -123,9 +123,12 @@ def test_safe_manual_override():
     try:
         disc = db.query(Discrepancy).first()
         if not disc:
+            from app.models.location import Shelf
+            s1 = db.query(Shelf).first()
             disc = Discrepancy(
                 epc="EPC-OVERRIDE-TEST",
                 discrepancy_type="MISPLACED",
+                expected_location_id=s1.id if s1 else 1,
                 predicted_state="likely_absent_or_misplaced",
                 workflow_status="new",
                 confidence=0.88,

@@ -375,6 +375,43 @@ def update_antenna(id: int, updates: Dict[str, Any], db: Session = Depends(get_d
     db.refresh(ant)
     return get_antenna(id=id, db=db)
 
+@router.delete("/antennas/{id}")
+@router.delete("/readers/antennas/{id}")
+def delete_antenna(id: int, db: Session = Depends(get_db)):
+    """Removes an antenna from the reader and safely cleans up dependent records."""
+    from sqlalchemy import text
+    from app.models.rfid_event import RFIDEvent
+    from app.core.config import settings
+
+    ant = db.query(Antenna).filter(Antenna.id == id).first()
+    if not ant:
+        raise HTTPException(status_code=404, detail="Antenna not found")
+
+    try:
+        if settings.DATABASE_URL.startswith("sqlite"):
+            db.execute(text("PRAGMA foreign_keys = OFF;"))
+
+        # Explicitly clean up dependent calibrations and RFID events
+        db.query(AntennaCalibration).filter(AntennaCalibration.antenna_id == id).delete(synchronize_session=False)
+        db.query(RFIDEvent).filter(RFIDEvent.antenna_id == id).delete(synchronize_session=False)
+
+        db.delete(ant)
+        db.commit()
+
+        if settings.DATABASE_URL.startswith("sqlite"):
+            db.execute(text("PRAGMA foreign_keys = ON;"))
+            db.commit()
+
+        return {"success": True, "message": f"Antenna {id} removed successfully"}
+    except Exception as e:
+        db.rollback()
+        if settings.DATABASE_URL.startswith("sqlite"):
+            try:
+                db.execute(text("PRAGMA foreign_keys = ON;"))
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"Failed to remove antenna {id}: {str(e)}")
+
 @router.get("/antennas/{id}/calibrations")
 def get_antenna_calibrations(id: int, db: Session = Depends(get_db)):
     calibs = db.query(AntennaCalibration).filter(AntennaCalibration.antenna_id == id).all()

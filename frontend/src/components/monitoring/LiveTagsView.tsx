@@ -27,16 +27,41 @@ export const LiveTagsView: React.FC<LiveTagsViewProps> = ({
 }) => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [portFilter, setPortFilter] = useState<'ALL' | '1' | '2'>('ALL');
+  const [portFilter, setPortFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
   useEffect(() => {
+    let active = true;
+
+    const fetchTags = async () => {
+      try {
+        const inv = await api.getInventory();
+        if (active) {
+          setItems(inv);
+          setLastUpdated(new Date());
+        }
+      } catch (err) {
+        console.error('Error polling live tags:', err);
+      }
+    };
+
     setLoading(true);
-    api.getInventory()
-      .then(setItems)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+    fetchTags().finally(() => {
+      if (active) setLoading(false);
+    });
+
+    // Automatically update real-time tags every 5 seconds
+    const interval = setInterval(() => {
+      fetchTags();
+      onRefresh();
+    }, 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [onRefresh]);
 
   // Map latest live events by EPC
   const eventMap = new Map<string, RFIDEvent>();
@@ -49,6 +74,15 @@ export const LiveTagsView: React.FC<LiveTagsViewProps> = ({
     }
   });
 
+  // Dynamically derive active antenna ports present in live stream
+  const availablePorts = Array.from(
+    new Set(
+      liveEvents
+        .map((e) => e.antenna_port || (e as any).antenna_id)
+        .filter((p): p is number => typeof p === 'number' && p > 0)
+    )
+  ).sort((a, b) => a - b);
+
   const filteredItems = items.filter((item) => {
     const ev = eventMap.get(item.epc);
     const matchesSearch =
@@ -56,7 +90,7 @@ export const LiveTagsView: React.FC<LiveTagsViewProps> = ({
       item.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.product_sku.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const antPort = ev?.antenna_port !== undefined ? String(ev.antenna_port) : (item.expected_shelf_code === 'SHELF_A' ? '1' : '2');
+    const antPort = ev?.antenna_port !== undefined ? String(ev.antenna_port) : null;
     const matchesPort = portFilter === 'ALL' || antPort === portFilter;
 
     return matchesSearch && matchesPort;
@@ -79,10 +113,17 @@ export const LiveTagsView: React.FC<LiveTagsViewProps> = ({
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
               {items.length} PHYSICAL TAGS REGISTERED
             </span>
+            <span className="flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping" />
+              <span>AUTO-UPDATING EVERY 5S</span>
+            </span>
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
               isLiveConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'
             }`}>
               {isLiveConnected ? 'LIVE FEED CONNECTED' : 'POLLING GATEWAY'}
+            </span>
+            <span className="text-[11px] text-slate-400 font-mono hidden sm:inline">
+              Synced: {lastUpdated.toLocaleTimeString()}
             </span>
           </div>
           <p className="text-slate-500 text-xs mt-1">
@@ -119,17 +160,27 @@ export const LiveTagsView: React.FC<LiveTagsViewProps> = ({
 
         <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
           <span className="text-slate-500 text-[11px] font-medium">Filter by Antenna:</span>
-          {(['ALL', '1', '2'] as const).map((p) => (
+          <button
+            onClick={() => setPortFilter('ALL')}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+              portFilter === 'ALL'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            All Antennas
+          </button>
+          {availablePorts.map((p) => (
             <button
               key={p}
-              onClick={() => setPortFilter(p)}
-              className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                portFilter === p
+              onClick={() => setPortFilter(String(p))}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                portFilter === String(p)
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              {p === 'ALL' ? 'All Antennas' : `Antenna Port ${p}`}
+              Antenna Port {p}
             </button>
           ))}
         </div>
@@ -161,8 +212,8 @@ export const LiveTagsView: React.FC<LiveTagsViewProps> = ({
               ) : (
                 filteredItems.map((item) => {
                   const ev = eventMap.get(item.epc);
-                  const observedRssi = (ev?.rssi_dbm ?? (ev as any)?.rssi) ?? (item.expected_shelf_code === 'SHELF_A' ? -42.0 : -45.0);
-                  const observedPort = ev?.antenna_port ?? (item.expected_shelf_code === 'SHELF_A' ? 1 : 2);
+                  const observedRssi = ev?.rssi_dbm !== undefined ? ev.rssi_dbm : (ev as any)?.rssi !== undefined ? (ev as any).rssi : null;
+                  const observedPort = ev?.antenna_port ?? (ev as any)?.antenna_id ?? null;
                   const isMisplaced = item.observed_shelf_code && item.observed_shelf_code !== item.expected_shelf_code;
 
                   return (
@@ -175,10 +226,14 @@ export const LiveTagsView: React.FC<LiveTagsViewProps> = ({
                         <span className="text-[10px] text-slate-400 font-mono">{item.product_sku}</span>
                       </td>
                       <td className="py-3 px-4">
-                        <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold border border-slate-200">
-                          <Radio className="w-3 h-3 text-blue-600" />
-                          <span>Port {observedPort} (ANT-0{observedPort})</span>
-                        </span>
+                        {observedPort !== null ? (
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono text-[11px] font-semibold border border-slate-200">
+                            <Radio className="w-3 h-3 text-blue-600" />
+                            <span>Port {observedPort} (ANT-0{observedPort})</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-mono italic text-[11px]">—</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 font-mono font-bold text-blue-600">
                         {item.expected_shelf_code}
@@ -193,10 +248,14 @@ export const LiveTagsView: React.FC<LiveTagsViewProps> = ({
                         )}
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs font-bold border ${getRssiColor(observedRssi)}`}>
-                          <Signal className="w-3 h-3" />
-                          <span>{observedRssi.toFixed(1)} dBm</span>
-                        </span>
+                        {observedRssi !== null ? (
+                          <span className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs font-bold border ${getRssiColor(observedRssi)}`}>
+                            <Signal className="w-3 h-3" />
+                            <span>{observedRssi.toFixed(1)} dBm</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">No active RF signal</span>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${

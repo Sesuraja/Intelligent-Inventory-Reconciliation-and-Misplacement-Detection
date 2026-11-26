@@ -110,10 +110,21 @@ class RFIDEventCollector:
             # Map antenna ports to DB Antenna records
             antennas = db.query(Antenna).all()
             port_to_id = {ant.port_number: ant.id for ant in antennas}
+            shelf_map = {ant.port_number: ant.shelf_id for ant in antennas}
+            default_ant_id = antennas[0].id if antennas else 1
+            default_shelf_id = antennas[0].shelf_id if antennas and antennas[0].shelf_id else 1
+
+            # Auto-sync live physical tags & inventory directly from real API host telemetry
+            from app.models.rfid_tag import RFIDTag
+            from app.models.inventory import Inventory
+            from app.models.product import Product
+
+            existing_inv = {inv.epc: inv for inv in db.query(Inventory).all()}
 
             for raw in raw_observations:
                 port = raw.get("antenna_port", 1)
-                ant_id = port_to_id.get(port, 1)
+                ant_id = port_to_id.get(port, default_ant_id)
+                observed_shelf_id = shelf_map.get(port) or default_shelf_id
 
                 norm = EventNormalizer.normalize(
                     raw_event=raw,
@@ -124,6 +135,53 @@ class RFIDEventCollector:
 
                 if norm["valid"]:
                     normalized_events.append(norm)
+                    epc = norm["epc"]
+
+                    # Dynamically track live tag and inventory from real API host
+                    if epc not in existing_inv:
+                        tag = db.query(RFIDTag).filter(RFIDTag.epc == epc).first()
+                        if not tag:
+                            # Map tag cleanly to Master Product Catalog (no demo dummy SKU per tag)
+                            target_sku = "SKU-UHF-ASSET" if port == 2 else "SKU-UHF-CARTON"
+                            prod = db.query(Product).filter(Product.sku == target_sku).first()
+                            if not prod:
+                                prod = db.query(Product).first()
+                            if not prod:
+                                prod = Product(
+                                    sku=target_sku,
+                                    name="UHF Tagged Standard Carton" if target_sku == "SKU-UHF-CARTON" else "High-Value Serialized Asset",
+                                    category="Cartons & Packaging" if target_sku == "SKU-UHF-CARTON" else "Electronics",
+                                    unit="carton" if target_sku == "SKU-UHF-CARTON" else "piece",
+                                    min_stock=5
+                                )
+                                db.add(prod)
+                                db.flush()
+                            tag = RFIDTag(
+                                epc=epc,
+                                product_id=prod.id,
+                                status="ACTIVE",
+                                packaging_class="CARDBOARD" if target_sku == "SKU-UHF-CARTON" else "PLASTIC",
+                                assigned_at=now
+                            )
+                            db.add(tag)
+                            db.flush()
+
+                        new_inv = Inventory(
+                            epc=epc,
+                            product_id=tag.product_id,
+                            expected_location_id=observed_shelf_id,
+                            observed_location_id=observed_shelf_id,
+                            status="IN_PLACE",
+                            confidence=1.0,
+                            last_observed_at=norm["observed_at"],
+                            last_reconciled_at=now
+                        )
+                        db.add(new_inv)
+                        existing_inv[epc] = new_inv
+                    else:
+                        inv = existing_inv[epc]
+                        inv.observed_location_id = observed_shelf_id
+                        inv.last_observed_at = norm["observed_at"]
 
                     event_row = RFIDEvent(
                         event_id=f"EVT-{uuid.uuid4().hex.upper()}",
@@ -159,7 +217,7 @@ class RFIDEventCollector:
 
             # Broadcast live events to WebSocket subscribers
             if normalized_events:
-                broadcast_sample = normalized_events[:8]
+                broadcast_sample = normalized_events[:50]
                 await ws_manager.broadcast("rfid-events", {
                     "type": "RFID_OBSERVATIONS",
                     "mode": mode.value,

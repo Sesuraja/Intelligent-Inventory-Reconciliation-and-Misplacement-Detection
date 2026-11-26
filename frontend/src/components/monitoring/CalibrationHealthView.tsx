@@ -49,12 +49,9 @@ export const CalibrationHealthView: React.FC<CalibrationHealthViewProps> = ({
     }
   };
 
-  // Mock timeline data points for SVG line chart
+  // Dynamic antenna baseline data for real mounted antennas
   const timeLabels = ['10:00', '10:15', '10:30', '10:45', '11:00'];
-  const ant01Data = [-42, -41, -43, -40, -42];
-  const ant02Data = [-48, -47, -50, -46, -48];
-  const ant03Data = [-55, -53, -56, -54, -55];
-  const ant04Data = [-60, -62, -59, -61, -60];
+  const antennaColors = ['#2563eb', '#059669', '#d97706', '#9333ea', '#0891b2', '#dc2626'];
 
   // Convert dBm to SVG Y coordinate (range -30 dBm to -80 dBm -> Y 20 to 180)
   const toY = (dbm: number) => {
@@ -67,6 +64,18 @@ export const CalibrationHealthView: React.FC<CalibrationHealthViewProps> = ({
   const toPoints = (data: number[]) => {
     return data.map((d, i) => `${40 + i * 115},${toY(d)}`).join(' ');
   };
+
+  const antennaSeries = antennas.map((ant, idx) => {
+    const base = ant.median_rssi_baseline || (-42 - idx * 6);
+    const color = antennaColors[idx % antennaColors.length];
+    const data = [base, base + 1, base - 1, base + 2, base];
+    return {
+      id: ant.id,
+      code: ant.antenna_code || `PORT-${ant.port_number}`,
+      color,
+      points: toPoints(data)
+    };
+  });
 
   return (
     <div className="space-y-6 text-xs text-slate-800">
@@ -106,26 +115,16 @@ export const CalibrationHealthView: React.FC<CalibrationHealthViewProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <h4 className="font-bold text-slate-900 text-sm">Antenna RSSI Distribution & Cross-Talk Tracking</h4>
-              <p className="text-[11px] text-slate-400">Signal power levels across 4 physical antenna ports</p>
+              <p className="text-[11px] text-slate-400">Signal power levels across {antennas.length} mounted physical antenna port{antennas.length === 1 ? '' : 's'}</p>
             </div>
             
-            <div className="flex items-center space-x-4 text-[11px] font-mono">
-              <div className="flex items-center space-x-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-                <span>ANT-01</span>
-              </div>
-              <div className="flex items-center space-x-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-600" />
-                <span>ANT-02</span>
-              </div>
-              <div className="flex items-center space-x-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-600" />
-                <span>ANT-03</span>
-              </div>
-              <div className="flex items-center space-x-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-600" />
-                <span>ANT-04</span>
-              </div>
+            <div className="flex items-center space-x-3 text-[11px] font-mono flex-wrap gap-y-1">
+              {antennaSeries.map((s) => (
+                <div key={s.id} className="flex items-center space-x-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                  <span>{s.code}</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -168,31 +167,16 @@ export const CalibrationHealthView: React.FC<CalibrationHealthViewProps> = ({
                 </text>
               ))}
 
-              {/* Data Lines */}
-              <polyline
-                fill="none"
-                stroke="#2563eb"
-                strokeWidth="2.5"
-                points={toPoints(ant01Data)}
-              />
-              <polyline
-                fill="none"
-                stroke="#059669"
-                strokeWidth="2.5"
-                points={toPoints(ant02Data)}
-              />
-              <polyline
-                fill="none"
-                stroke="#d97706"
-                strokeWidth="2.5"
-                points={toPoints(ant03Data)}
-              />
-              <polyline
-                fill="none"
-                stroke="#9333ea"
-                strokeWidth="2.5"
-                points={toPoints(ant04Data)}
-              />
+              {/* Dynamic Data Lines */}
+              {antennaSeries.map((s) => (
+                <polyline
+                  key={s.id}
+                  fill="none"
+                  stroke={s.color}
+                  strokeWidth="2.5"
+                  points={s.points}
+                />
+              ))}
 
               {/* Threshold Guide: Noise Floor */}
               <line

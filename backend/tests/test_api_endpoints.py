@@ -231,6 +231,37 @@ def test_dynamic_product_shelf_tag_antenna_lifecycle():
     assert ant_res["shelf_code"] == test_shelf
     assert ant_res["port_number"] == 4
 
+def test_antenna_deletion_lifecycle():
+    # 1. Fetch reader
+    res_readers = client.get("/api/v1/readers")
+    assert res_readers.status_code == 200
+    readers = res_readers.json()
+    assert len(readers) > 0
+    reader_id = readers[0]["id"]
+
+    # 2. Create temporary antenna
+    res_create = client.post("/api/v1/readers/antennas/assign", json={
+        "reader_id": reader_id,
+        "antenna_code": "ANT-TEST-DELETE-CYCLE",
+        "port_number": 88,
+        "shelf_id": 1,
+        "tx_power_dbm": 30.0,
+        "gain_dbi": 6.0,
+        "beam_angle_deg": 70.0,
+        "purpose": "Testing deletion endpoint"
+    })
+    assert res_create.status_code == 200
+    ant_id = res_create.json()["id"]
+
+    # 3. Delete antenna via DELETE /api/v1/readers/antennas/{id}
+    res_del = client.delete(f"/api/v1/readers/antennas/{ant_id}")
+    assert res_del.status_code == 200
+    assert res_del.json()["success"] is True
+
+    # 4. Verify antenna is gone
+    res_get = client.get(f"/api/v1/antennas/{ant_id}")
+    assert res_get.status_code == 404
+
 def test_dynamic_reports():
     res_inv = client.get("/api/v1/reports/inventory")
     assert res_inv.status_code == 200

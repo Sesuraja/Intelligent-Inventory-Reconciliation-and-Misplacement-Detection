@@ -32,15 +32,34 @@ export const ReaderStatusView: React.FC<ReaderStatusViewProps> = ({ readers, onR
     operatingMode?: string;
   } | null>(null);
 
-  const activeReader = readers[0] || {
-    id: 1,
-    reader_code: '100EHH5323020053',
-    model: 'Aperture UHF Fixed Gateway (2-Port HTTP)',
-    ip_address: 'gateway.apertureventurestudio.com',
-    port: 443,
-    protocol: 'HTTP_GATEWAY',
-    status: 'ONLINE'
-  };
+  // Auto-refresh reader status every 5 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      onRefresh();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [onRefresh]);
+
+  if (readers.length === 0) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center space-y-4">
+        <Server className="w-10 h-10 text-slate-300 mx-auto" />
+        <h4 className="font-bold text-slate-700 text-sm">No RFID Reader Detected</h4>
+        <p className="text-slate-500 text-xs max-w-md mx-auto">
+          No fixed UHF RFID reader is currently registered or communicating with the API. Check your network or gateway settings.
+        </p>
+        <button
+          onClick={onRefresh}
+          className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>Refresh Readers</span>
+        </button>
+      </div>
+    );
+  }
+
+  const activeReader = readers[0];
 
   const handleTestPhysicalReader = async () => {
     setProbingHardware(true);
@@ -74,6 +93,10 @@ export const ReaderStatusView: React.FC<ReaderStatusViewProps> = ({ readers, onR
             <h3 className="text-base font-bold text-slate-900">UHF RFID Reader Diagnostics & Gateway Health</h3>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
               PHYSICAL HARDWARE
+            </span>
+            <span className="flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+              <span>AUTO-UPDATING EVERY 5S</span>
             </span>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
               APERTURE GATEWAY

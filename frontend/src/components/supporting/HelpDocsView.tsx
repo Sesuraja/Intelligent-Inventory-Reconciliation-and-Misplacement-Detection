@@ -95,17 +95,16 @@ export const HelpDocsView: React.FC = () => {
         <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs space-y-3">
           <div className="flex items-center space-x-2">
             <Radio className="w-4 h-4 text-blue-600" />
-            <h4 className="font-bold text-slate-900 text-sm">Fixed UHF RFID Setup (Impinj Speedway R420)</h4>
+            <h4 className="font-bold text-slate-900 text-sm">Fixed UHF RFID Setup (Aperture UHF Fixed Gateway)</h4>
           </div>
           <p className="text-slate-500 text-[11px]">
             To connect physical reader hardware to the production system:
           </p>
           <ol className="list-decimal pl-4 space-y-1.5 text-slate-600 text-[11px]">
-            <li>Connect reader Ethernet cable to local warehouse LAN on subnet `192.168.1.0/24`.</li>
-            <li>Configure static IP address `192.168.1.100` and default LLRP port `5084`.</li>
-            <li>Connect Antenna 1 (Shelf A), Antenna 2 (Shelf B), Antenna 3 (Shelf C), Antenna 4 (Shelf D).</li>
-            <li>Navigate to <strong>Reader & Antenna Status</strong> and click <strong>Probe Physical Reader (LLRP/TCP)</strong>.</li>
-            <li>The system will discover reader capabilities and automatically switch from SIMULATION to PHYSICAL mode.</li>
+            <li>Configure the Aperture Gateway live endpoint in system settings.</li>
+            <li>Connect antenna cables to physical RF ports (e.g. Port 1 Shelf A, Port 2 Shelf B).</li>
+            <li>Navigate to <strong>Reader & Antenna Status</strong> to monitor live telemetry streams.</li>
+            <li>The system autonomously ingests real-time observations in PHYSICAL mode.</li>
           </ol>
         </div>
 

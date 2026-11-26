@@ -27,20 +27,16 @@ export const HandheldScansView: React.FC<HandheldScansViewProps> = ({
   onRefresh
 }) => {
   const [sessions, setSessions] = useState<any[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
   
   // New session form
   const [sessionCode, setSessionCode] = useState(`SCAN-00${Math.floor(Math.random() * 900 + 100)}`);
-  const [selectedDevice, setSelectedDevice] = useState('HH-01 (Zebra RFD40 Mobile Sled)');
+  const [selectedDevice, setSelectedDevice] = useState('');
   const [selectedShelf, setSelectedShelf] = useState(shelves[0]?.shelf_code || 'SHELF_A');
-  const [operatorName, setOperatorName] = useState('Marcus Vance (Warehouse Supervisor)');
-
-  const devices = [
-    { id: 'HH-01', name: 'HH-01 (Zebra RFD40 Mobile Sled)', type: 'eConn Sled', battery: '82%', status: 'Active', operator: 'Marcus Vance' },
-    { id: 'HH-02', name: 'HH-02 (Chainway C72 Android)', type: 'All-in-One Gun', battery: '95%', status: 'Standby', operator: 'Elena Rostova' }
-  ];
+  const [operatorName, setOperatorName] = useState('Warehouse Operator');
 
   useEffect(() => {
     loadSessions();
@@ -49,10 +45,17 @@ export const HandheldScansView: React.FC<HandheldScansViewProps> = ({
   const loadSessions = async () => {
     setLoading(true);
     try {
-      const data = await api.getHandheldSessions();
-      setSessions(data);
+      const [sesData, devData] = await Promise.all([
+        api.getHandheldSessions(),
+        api.getHandheldReaders()
+      ]);
+      setSessions(sesData);
+      setDevices(devData || []);
+      if (devData && devData.length > 0) {
+        setSelectedDevice(devData[0].device_code);
+      }
     } catch (err) {
-      console.error('Error loading handheld sessions:', err);
+      console.error('Error loading handheld data:', err);
     } finally {
       setLoading(false);
     }
@@ -63,7 +66,7 @@ export const HandheldScansView: React.FC<HandheldScansViewProps> = ({
     try {
       await api.createHandheldSession({
         session_code: sessionCode,
-        device_id: selectedDevice.split(' ')[0],
+        device_id: selectedDevice || 'HANDHELD-MANUAL',
         shelf_code: selectedShelf,
         operator_name: operatorName
       });
@@ -85,12 +88,12 @@ export const HandheldScansView: React.FC<HandheldScansViewProps> = ({
           <div className="flex items-center space-x-2">
             <Smartphone className="w-5 h-5 text-indigo-600" />
             <h3 className="text-base font-bold text-slate-900">Handheld Mobile RFID Scans & Audits</h3>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Ground-Truth Verification Sleds
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+              {devices.length > 0 ? `${devices.length} Handhelds Registered` : 'No Handheld Connected'}
             </span>
           </div>
           <p className="text-slate-500 text-[11px] mt-1">
-            Perform physical ground-truth sweeps using mobile Zebra & Chainway handheld readers to verify AI discrepancy hypotheses.
+            Physical ground-truth sweeps and handheld scan sessions for verifying AI discrepancy hypotheses.
           </p>
         </div>
 
@@ -114,41 +117,54 @@ export const HandheldScansView: React.FC<HandheldScansViewProps> = ({
       </div>
 
       {/* Handheld Device Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {devices.map((dev) => (
-          <div key={dev.id} className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 shadow-xs">
-                <Smartphone className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="font-bold text-slate-900 text-sm">{dev.id}</span>
-                  <span className="text-[10px] px-2 py-0.2 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
-                    {dev.type}
-                  </span>
-                </div>
-                <p className="text-slate-500 text-[11px]">{dev.name}</p>
-                <p className="text-slate-400 text-[10px] mt-0.5">Assigned: {dev.operator}</p>
-              </div>
-            </div>
-
-            <div className="text-right space-y-1">
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                dev.status === 'Active'
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : 'bg-slate-100 text-slate-600 border-slate-200'
-              }`}>
-                {dev.status}
-              </span>
-              <div className="flex items-center justify-end space-x-1 text-slate-500 text-[11px] pt-1 font-mono">
-                <Battery className="w-3.5 h-3.5 text-emerald-600" />
-                <span>{dev.battery}</span>
-              </div>
-            </div>
+      {devices.length === 0 ? (
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs text-center space-y-2">
+          <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto">
+            <Smartphone className="w-5 h-5" />
           </div>
-        ))}
-      </div>
+          <h4 className="text-sm font-bold text-slate-800">No Mobile Handheld Scanners Connected</h4>
+          <p className="text-slate-500 text-xs max-w-lg mx-auto">
+            Live telemetry is streaming from Aperture Fixed UHF Gateway (Reader 100EHH5323020053).
+            No mobile handheld readers have been reported by the API. You can import physical handheld audit scans via CSV batch or register a device when active.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {devices.map((dev) => (
+            <div key={dev.id} className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 shadow-xs">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-slate-900 text-sm">{dev.device_code}</span>
+                    <span className="text-[10px] px-2 py-0.2 rounded-full bg-slate-100 text-slate-700 font-semibold border border-slate-200">
+                      {dev.model || 'Handheld'}
+                    </span>
+                  </div>
+                  <p className="text-slate-500 text-[11px]">{dev.model}</p>
+                  <p className="text-slate-400 text-[10px] mt-0.5">Assigned: {dev.assigned_operator || 'Unassigned'}</p>
+                </div>
+              </div>
+
+              <div className="text-right space-y-1">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                  dev.status === 'ACTIVE'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}>
+                  {dev.status}
+                </span>
+                <div className="flex items-center justify-end space-x-1 text-slate-500 text-[11px] pt-1 font-mono">
+                  <Battery className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>{dev.battery_level ?? 100}%</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Scan Sessions History */}
       <div className="bg-white border border-slate-200/90 rounded-2xl overflow-hidden shadow-xs">

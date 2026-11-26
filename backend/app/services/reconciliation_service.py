@@ -215,11 +215,19 @@ class ReconciliationService:
 
                 is_sim = loc_result.get("is_simulated", False) or getattr(mode_manager, "current_mode", None) and mode_manager.current_mode.value == "SIMULATION"
 
+                valid_exp_shelf = db.query(Shelf).filter(Shelf.id == item.expected_location_id).first() if item.expected_location_id else None
+                if not valid_exp_shelf:
+                    valid_exp_shelf = db.query(Shelf).filter(Shelf.shelf_code == "SHELF_A").first() or db.query(Shelf).first()
+                    if valid_exp_shelf:
+                        item.expected_location_id = valid_exp_shelf.id
+                        db.flush()
+                exp_shelf_id = valid_exp_shelf.id if valid_exp_shelf else 1
+
                 if not existing_disc:
                     new_disc = Discrepancy(
                         epc=epc,
                         discrepancy_type=predicted_state,
-                        expected_location_id=item.expected_location_id,
+                        expected_location_id=exp_shelf_id,
                         observed_location_id=obs_shelf_id,
                         confidence=confidence,
                         root_cause=root_cause["predicted_cause"],

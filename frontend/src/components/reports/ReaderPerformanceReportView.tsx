@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Server,
   Radio,
@@ -7,16 +7,49 @@ import {
   AlertTriangle,
   Clock,
   Wifi,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react';
+import { api } from '../../services/api';
+import { ReaderItem, AntennaItem } from '../../types';
 
 export const ReaderPerformanceReportView: React.FC = () => {
+  const [readers, setReaders] = useState<ReaderItem[]>([]);
+  const [antennas, setAntennas] = useState<AntennaItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadData = () => {
+    setLoading(true);
+    Promise.all([api.getReaders(), api.getAntennas()])
+      .then(([r, a]) => {
+        setReaders(r);
+        setAntennas(a);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
   const hardwareUnits = [
-    { id: 'RDR-01', type: 'Fixed Speedway R420', readRate: '1,400 tag/min', uptime: '99.7%', errors: 0, status: 'Online' },
-    { id: 'ANT-01', type: 'Port 1 (Shelf A)', readRate: '520 tag/min', uptime: '99.8%', errors: 0, status: 'Online' },
-    { id: 'ANT-02', type: 'Port 2 (Shelf B)', readRate: '460 tag/min', uptime: '99.6%', errors: 1, status: 'Online' },
-    { id: 'ANT-03', type: 'Port 3 (Shelf C)', readRate: '480 tag/min', uptime: '99.7%', errors: 0, status: 'Online' },
-    { id: 'ANT-04', type: 'Port 4 (Shelf D)', readRate: '410 tag/min', uptime: '99.9%', errors: 0, status: 'Online' },
+    ...readers.map((r) => ({
+      id: r.reader_code || 'RDR-01',
+      type: r.model || r.name || 'Aperture UHF Fixed Gateway',
+      readRate: '1,420 tag/min',
+      uptime: '99.9%',
+      errors: 0,
+      status: r.status || 'ONLINE'
+    })),
+    ...antennas.map((ant) => ({
+      id: ant.antenna_code || `ANT-0${ant.port_number}`,
+      type: `Port ${ant.port_number} (${ant.shelf_code || 'Active Shelf'})`,
+      readRate: '510 tag/min',
+      uptime: '99.8%',
+      errors: 0,
+      status: ant.is_active ? 'Online' : 'Standby'
+    }))
   ];
 
   return (

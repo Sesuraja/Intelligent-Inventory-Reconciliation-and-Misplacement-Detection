@@ -11,7 +11,9 @@ import {
   Info,
   ShieldCheck,
   Package,
-  Edit2
+  Edit2,
+  Trash2,
+  Plus
 } from 'lucide-react';
 import { ShelfItem, InventoryItem, AntennaItem } from '../../types';
 
@@ -21,7 +23,10 @@ interface WarehouseLayoutViewProps {
   antennas: AntennaItem[];
   onSelectShelf?: (shelfCode: string) => void;
   onEditShelf?: (shelf: ShelfItem) => void;
+  onDeleteShelf?: (shelfId: number) => void;
   onAddShelf?: () => void;
+  onAddAntenna?: () => void;
+  onDeleteAntenna?: (antennaId: number) => void;
   onConfigureWarehouse?: () => void;
 }
 
@@ -31,7 +36,10 @@ export const WarehouseLayoutView: React.FC<WarehouseLayoutViewProps> = ({
   antennas,
   onSelectShelf,
   onEditShelf,
+  onDeleteShelf,
   onAddShelf,
+  onAddAntenna,
+  onDeleteAntenna,
   onConfigureWarehouse
 }) => {
   const [selectedShelfCode, setSelectedShelfCode] = useState<string>(shelves[0]?.shelf_code || 'SHELF_A');
@@ -94,6 +102,16 @@ export const WarehouseLayoutView: React.FC<WarehouseLayoutViewProps> = ({
               <span>+ Add Shelf</span>
             </button>
           )}
+
+          {onAddAntenna && (
+            <button
+              onClick={onAddAntenna}
+              className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>+ Add Antenna</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -126,35 +144,59 @@ export const WarehouseLayoutView: React.FC<WarehouseLayoutViewProps> = ({
             <div className="relative z-10 flex flex-col items-center">
               <div className="bg-slate-800/90 border border-cyan-500/50 px-4 py-1.5 rounded-full flex items-center space-x-2 shadow-lg shadow-cyan-500/20">
                 <Radio className="w-4 h-4 text-cyan-400 animate-pulse" />
-                <span className="font-mono font-bold text-xs text-cyan-300">Overhead Reader Truss: Impinj Speedway R420 (RDR-01)</span>
+                <span className="font-mono font-bold text-xs text-cyan-300">Overhead Reader Portal: Aperture Fixed UHF Gateway (100EHH5323020053)</span>
                 <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-400 text-[10px] rounded font-mono font-bold">ONLINE</span>
               </div>
               <div className="w-0.5 h-6 bg-gradient-to-b from-cyan-500/50 to-transparent" />
             </div>
 
-            {/* Antennas Row with Beam Cones */}
-            <div className="relative z-10 grid grid-cols-4 gap-4 my-2">
-              {[
-                { port: 1, code: 'ANT-01', shelf: 'SHELF_A', pwr: '30 dBm' },
-                { port: 2, code: 'ANT-02', shelf: 'SHELF_B', pwr: '30 dBm' },
-                { port: 3, code: 'ANT-03', shelf: 'SHELF_C', pwr: '30 dBm' },
-                { port: 4, code: 'ANT-04', shelf: 'SHELF_D', pwr: '30 dBm' },
-              ].map((ant) => (
-                <div key={ant.port} className="flex flex-col items-center space-y-1">
-                  <div className="bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 px-3 py-1 rounded-xl text-center shadow-md flex items-center space-x-1.5">
-                    <Radio className="w-3.5 h-3.5 text-emerald-400" />
-                    <div>
-                      <div className="font-bold text-[11px] font-mono">{ant.code}</div>
-                      <div className="text-[9px] text-emerald-400/80 font-mono">Port {ant.port} • {ant.pwr}</div>
-                    </div>
-                  </div>
-                  {/* Visual Beam Cone Projection */}
-                  <div
-                    className="w-full h-16 bg-gradient-to-b from-emerald-500/25 via-emerald-500/10 to-transparent rounded-b-2xl border-x border-emerald-500/20"
-                    style={{ clipPath: 'polygon(25% 0%, 75% 0%, 100% 100%, 0% 100%)' }}
-                  />
+            {/* Antennas Row with Beam Cones - Dynamic Antennas */}
+            <div className="relative z-10 grid grid-cols-2 md:grid-cols-4 gap-4 my-2">
+              {antennas.length === 0 ? (
+                <div className="col-span-full py-4 text-center bg-slate-800/60 rounded-xl border border-slate-700/80 text-slate-400">
+                  <span>No antennas currently mounted. </span>
+                  {onAddAntenna && (
+                    <button onClick={onAddAntenna} className="text-cyan-400 underline font-semibold cursor-pointer">
+                      + Add Antenna Port
+                    </button>
+                  )}
                 </div>
-              ))}
+              ) : (
+                antennas.map((ant) => {
+                  const mappedShelf = shelves.find((s) => s.id === ant.shelf_id);
+                  return (
+                    <div key={ant.id} className="flex flex-col items-center space-y-1 group relative">
+                      <div className="bg-emerald-950/80 border border-emerald-500/60 text-emerald-300 px-3 py-1.5 rounded-xl text-center shadow-md flex items-center justify-between space-x-2 w-full max-w-[210px]">
+                        <div className="flex items-center space-x-1.5 text-left truncate">
+                          <Radio className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <div className="truncate">
+                            <div className="font-bold text-[11px] font-mono">{ant.antenna_code || `ANT-0${ant.port_number}`}</div>
+                            <div className="text-[9px] text-emerald-400/80 font-mono">Port {ant.port_number} • {ant.tx_power_dbm || 30} dBm</div>
+                            <div className="text-[9px] text-slate-300 font-sans truncate">{mappedShelf ? mappedShelf.shelf_code : 'Unmapped'}</div>
+                          </div>
+                        </div>
+                        {onDeleteAntenna && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteAntenna(ant.id);
+                            }}
+                            className="p-1 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded transition shrink-0 cursor-pointer"
+                            title="Remove Antenna"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      {/* Visual Beam Cone Projection */}
+                      <div
+                        className="w-full h-16 bg-gradient-to-b from-emerald-500/25 via-emerald-500/10 to-transparent rounded-b-2xl border-x border-emerald-500/20"
+                        style={{ clipPath: 'polygon(25% 0%, 75% 0%, 100% 100%, 0% 100%)' }}
+                      />
+                    </div>
+                  );
+                })
+              )}
             </div>
 
             {/* Shelves Physical Storage Blocks */}
@@ -233,10 +275,19 @@ export const WarehouseLayoutView: React.FC<WarehouseLayoutViewProps> = ({
               {onEditShelf && selectedShelf && (
                 <button
                   onClick={() => onEditShelf(selectedShelf)}
-                  className="p-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-500 rounded-lg transition"
+                  className="p-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-500 rounded-lg transition cursor-pointer"
                   title="Edit Shelf Parameters"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {onDeleteShelf && selectedShelf && (
+                <button
+                  onClick={() => onDeleteShelf(selectedShelf.id)}
+                  className="p-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-500 rounded-lg transition cursor-pointer"
+                  title="Delete Shelf Location"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>

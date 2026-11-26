@@ -24,6 +24,7 @@ interface LiveMonitoringTabProps {
   liveEvents: RFIDEvent[];
   isLiveConnected: boolean;
   onRefreshData: () => void;
+  onDeleteAntenna?: (antennaId: number) => void;
   subPage?: string;
   onNavigateSubPage?: (subPageId: string) => void;
 }
@@ -34,6 +35,7 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
   liveEvents,
   isLiveConnected,
   onRefreshData,
+  onDeleteAntenna,
   subPage,
   onNavigateSubPage
 }) => {
@@ -159,10 +161,12 @@ export const LiveMonitoringTab: React.FC<LiveMonitoringTabProps> = ({
         <AntennaStatusView
           antennas={antennas}
           shelves={shelves}
+          liveEvents={liveEvents}
           onConfigureAntenna={(port) => {
             setSelectedPortForAntenna(port);
             setShowAssignAntennaModal(true);
           }}
+          onDeleteAntenna={onDeleteAntenna}
           onRefresh={onRefreshData}
         />
       )}

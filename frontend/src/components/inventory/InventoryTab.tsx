@@ -31,6 +31,7 @@ import { WMSSandboxView } from './WMSSandboxView';
 import { WarehouseLayoutView } from './WarehouseLayoutView';
 import { InventoryHistoryView } from './InventoryHistoryView';
 import { CycleCountWorkflowView } from './CycleCountWorkflowView';
+import { AssignAntennaModal } from '../monitoring/AssignAntennaModal';
 import { useAppSettings } from '../../context/SettingsContext';
 import { Edit2, Trash2 } from 'lucide-react';
 
@@ -45,6 +46,7 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [shelves, setShelves] = useState<ShelfItem[]>([]);
   const [antennas, setAntennas] = useState<AntennaItem[]>([]);
+  const [readers, setReaders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters & Search
@@ -68,6 +70,7 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
   const [showCreateShelfModal, setShowCreateShelfModal] = useState(false);
   const [showAssignTagModal, setShowAssignTagModal] = useState(false);
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
+  const [showAssignAntennaModal, setShowAssignAntennaModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [editingShelf, setEditingShelf] = useState<ShelfItem | null>(null);
   const [showWarehouseConfigModal, setShowWarehouseConfigModal] = useState(false);
@@ -87,6 +90,26 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
     }
   };
 
+  const handleDeleteShelf = async (id: number) => {
+    if (!window.confirm('Are you sure you want to remove this shelf? Any mapped antenna or items will be unassigned.')) return;
+    try {
+      await api.deleteShelf(id);
+      loadData();
+    } catch (err: any) {
+      alert(`Error deleting shelf: ${err.message}`);
+    }
+  };
+
+  const handleDeleteAntenna = async (id: number) => {
+    if (!window.confirm('Are you sure you want to remove this antenna?')) return;
+    try {
+      await api.deleteAntenna(id);
+      loadData();
+    } catch (err: any) {
+      alert(`Error removing antenna: ${err.message}`);
+    }
+  };
+
   useEffect(() => {
     loadData();
   }, []);
@@ -94,17 +117,18 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
   const loadData = async () => {
     setLoading(true);
     try {
-      const [invData, prodData, shelfData, antData] = await Promise.all([
+      const [invData, prodData, shelfData, antData, readerData] = await Promise.all([
         api.getInventory(),
         api.getProducts(),
         api.getShelves(),
-        api.getAntennas()
+        api.getAntennas(),
+        api.getReaders()
       ]);
       setItems(invData);
       setProducts(prodData);
       setShelves(shelfData);
       setAntennas(antData);
-      setShelves(shelfData);
+      setReaders(readerData);
       if (shelfData.length > 0) {
         setTargetShelfId(shelfData[0].id);
       }
@@ -222,42 +246,63 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setShowCreateProductModal(true)}
-            className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs transition"
-          >
-            <Package className="w-3.5 h-3.5 text-emerald-400" />
-            <span>+ Add Product</span>
-          </button>
+          {activeSubView === 'tags' && (
+            <>
+              <button
+                onClick={() => setShowAssignTagModal(true)}
+                className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+              >
+                <Tag className="w-3.5 h-3.5" />
+                <span>+ Assign Tag to Product</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (filteredItems.length > 0) {
+                    setMoveEpc(filteredItems[0].epc);
+                  }
+                  setShowMoveModal(true);
+                }}
+                className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                <span>Log Movement</span>
+              </button>
+            </>
+          )}
 
-          <button
-            onClick={() => setShowAssignTagModal(true)}
-            className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
-          >
-            <Tag className="w-3.5 h-3.5" />
-            <span>+ Assign Tag to Product</span>
-          </button>
+          {activeSubView === 'layout' && (
+            <>
+              <button
+                onClick={() => setShowCreateShelfModal(true)}
+                className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>+ Add Shelf</span>
+              </button>
+              <button
+                onClick={() => setShowAssignAntennaModal(true)}
+                className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+              >
+                <Radio className="w-3.5 h-3.5" />
+                <span>+ Add Antenna</span>
+              </button>
+            </>
+          )}
 
-          <button
-            onClick={() => setShowCreateShelfModal(true)}
-            className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-xs transition"
-          >
-            <Layers className="w-3.5 h-3.5 text-blue-600" />
-            <span>+ New Shelf</span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (filteredItems.length > 0) {
-                setMoveEpc(filteredItems[0].epc);
-              }
-              setShowMoveModal(true);
-            }}
-            className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5" />
-            <span>Log Movement</span>
-          </button>
+          {(activeSubView === 'wms' || activeSubView === 'history') && (
+            <button
+              onClick={() => {
+                if (filteredItems.length > 0) {
+                  setMoveEpc(filteredItems[0].epc);
+                }
+                setShowMoveModal(true);
+              }}
+              className="flex items-center justify-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>Log Movement</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -285,10 +330,10 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
             <div className="flex items-center space-x-3 w-full sm:w-auto justify-end">
               <button
                 onClick={() => setShowCreateProductModal(true)}
-                className="flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+                className="flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition cursor-pointer"
               >
                 <Package className="w-3.5 h-3.5" />
-                <span>+ Register New SKU</span>
+                <span>+ Add Product SKU</span>
               </button>
             </div>
           </div>
@@ -529,6 +574,9 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
           antennas={antennas}
           onEditShelf={(s) => setEditingShelf(s)}
           onAddShelf={() => setShowCreateShelfModal(true)}
+          onDeleteShelf={handleDeleteShelf}
+          onAddAntenna={() => setShowAssignAntennaModal(true)}
+          onDeleteAntenna={handleDeleteAntenna}
           onConfigureWarehouse={() => setShowWarehouseConfigModal(true)}
         />
       )}
@@ -665,6 +713,15 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
         isOpen={showWarehouseConfigModal}
         onClose={() => setShowWarehouseConfigModal(false)}
         onSuccess={loadData}
+      />
+
+      {/* Assign Antenna Modal */}
+      <AssignAntennaModal
+        isOpen={showAssignAntennaModal}
+        onClose={() => setShowAssignAntennaModal(false)}
+        onSuccess={loadData}
+        shelves={shelves}
+        readers={readers}
       />
 
     </div>
