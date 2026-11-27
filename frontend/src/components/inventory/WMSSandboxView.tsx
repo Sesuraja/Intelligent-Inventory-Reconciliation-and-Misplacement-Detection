@@ -30,21 +30,34 @@ export const WMSSandboxView: React.FC<WMSSandboxViewProps> = ({ shelves, onDataC
   const [lastMessage, setLastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Form states
-  const [receiveSku, setReceiveSku] = useState('SKU-1001');
+  const [receiveSku, setReceiveSku] = useState('');
   const [receiveQty, setReceiveQty] = useState(1);
-  const [receiveShelf, setReceiveShelf] = useState(shelves[0]?.shelf_code || 'SHELF_A');
-  const [receiveLot, setReceiveLot] = useState('LOT-2026-INB');
+  const [receiveShelf, setReceiveShelf] = useState(shelves[0]?.shelf_code || '');
+  const [receiveLot, setReceiveLot] = useState('LOT-LIVE');
 
   const [moveEpc, setMoveEpc] = useState('');
-  const [moveShelf, setMoveShelf] = useState(shelves[0]?.shelf_code || 'SHELF_A');
+  const [moveShelf, setMoveShelf] = useState(shelves[0]?.shelf_code || '');
   const [moveReason, setMoveReason] = useState('Standard stock replenishment');
 
   const [injectType, setInjectType] = useState('MISPLACE');
   const [injectEpc, setInjectEpc] = useState('');
-  const [injectShelf, setInjectShelf] = useState('SHELF_C');
+  const [injectShelf, setInjectShelf] = useState(shelves[0]?.shelf_code || '');
+
+  useEffect(() => {
+    if (shelves.length > 0) {
+      if (!receiveShelf) setReceiveShelf(shelves[0].shelf_code);
+      if (!moveShelf) setMoveShelf(shelves[0].shelf_code);
+      if (!injectShelf) setInjectShelf(shelves[shelves.length > 1 ? 1 : 0].shelf_code);
+    }
+  }, [shelves]);
 
   useEffect(() => {
     loadWMSData();
+    api.getProducts().then((prods) => {
+      if (prods && prods.length > 0) {
+        setReceiveSku((prev) => prev || prods[0].sku);
+      }
+    }).catch(() => {});
   }, []);
 
   const loadWMSData = async () => {

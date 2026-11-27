@@ -130,21 +130,67 @@ def update_product(id: int, updates: Dict[str, Any], db: Session = Depends(get_d
     prod = db.query(Product).filter(Product.id == id).first()
     if not prod:
         raise HTTPException(status_code=404, detail="Product not found")
+    new_sku = updates.get("sku")
+    if new_sku and new_sku != prod.sku:
+        dup = db.query(Product).filter(Product.sku == new_sku, Product.id != id).first()
+        if dup:
+            raise HTTPException(status_code=400, detail=f"Product with SKU '{new_sku}' already exists")
     for key, val in updates.items():
         if hasattr(prod, key) and key != "id":
             setattr(prod, key, val)
+    if new_sku:
+        db.query(WMSInventory).filter(WMSInventory.product_id == id).update(
+            {WMSInventory.sku: new_sku}, synchronize_session=False
+        )
     db.commit()
     db.refresh(prod)
     return prod
 
 @router.delete("/products/{id}")
 def delete_product(id: int, db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    from app.core.config import settings
+    from app.models.discrepancy import Discrepancy
+    from app.models.rfid_tag import TagAssignmentHistory
+
     prod = db.query(Product).filter(Product.id == id).first()
     if not prod:
         raise HTTPException(status_code=404, detail="Product not found")
-    db.delete(prod)
-    db.commit()
-    return {"success": True, "message": f"Product {id} deleted successfully"}
+
+    try:
+        if settings.DATABASE_URL.startswith("sqlite"):
+            db.execute(text("PRAGMA foreign_keys = OFF;"))
+
+        # Find EPCs linked to this product and clean up dependent records
+        epcs = [r[0] for r in db.query(RFIDTag.epc).filter(RFIDTag.product_id == id).all()]
+        epcs += [r[0] for r in db.query(Inventory.epc).filter(Inventory.product_id == id).all()]
+        epcs = list(set(epcs))
+        if epcs:
+            db.query(Discrepancy).filter(Discrepancy.epc.in_(epcs)).delete(synchronize_session=False)
+            db.query(InventoryMovement).filter(InventoryMovement.epc.in_(epcs)).delete(synchronize_session=False)
+
+        db.query(TagAssignmentHistory).filter(
+            (TagAssignmentHistory.previous_product_id == id) | (TagAssignmentHistory.new_product_id == id)
+        ).delete(synchronize_session=False)
+        db.query(Inventory).filter(Inventory.product_id == id).delete(synchronize_session=False)
+        db.query(WMSInventory).filter(WMSInventory.product_id == id).delete(synchronize_session=False)
+        db.query(RFIDTag).filter(RFIDTag.product_id == id).delete(synchronize_session=False)
+        db.delete(prod)
+        db.commit()
+
+        if settings.DATABASE_URL.startswith("sqlite"):
+            db.execute(text("PRAGMA foreign_keys = ON;"))
+            db.commit()
+
+        return {"success": True, "message": f"Product {id} deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        if settings.DATABASE_URL.startswith("sqlite"):
+            try:
+                db.execute(text("PRAGMA foreign_keys = ON;"))
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"Failed to delete product {id}: {str(e)}")
 
 @router.post("/products/import")
 def bulk_import_products(items: List[ProductCreate], db: Session = Depends(get_db)):
@@ -339,6 +385,46 @@ def retire_rfid_tag(epc: str, req: TagRetireRequest, db: Session = Depends(get_d
         "retirement_reason": tag.retirement_reason,
         "message": f"Tag {tag.epc} has been safely retired."
     }
+
+@router.delete("/rfid-tags/{epc}")
+def delete_rfid_tag(epc: str, db: Session = Depends(get_db)):
+    """Deletes an RFID tag and its associated inventory/tracking records by EPC."""
+    from sqlalchemy import text
+    from app.core.config import settings
+    from app.models.discrepancy import Discrepancy
+    from app.models.rfid_tag import TagAssignmentHistory
+
+    clean_epc = epc.strip().upper()
+    tag = db.query(RFIDTag).filter(RFIDTag.epc == clean_epc).first()
+    inv = db.query(Inventory).filter(Inventory.epc == clean_epc).first()
+    if not tag and not inv:
+        raise HTTPException(status_code=404, detail=f"RFID Tag with EPC {epc} not found")
+
+    try:
+        if settings.DATABASE_URL.startswith("sqlite"):
+            db.execute(text("PRAGMA foreign_keys = OFF;"))
+
+        db.query(Discrepancy).filter(Discrepancy.epc == clean_epc).delete(synchronize_session=False)
+        db.query(InventoryMovement).filter(InventoryMovement.epc == clean_epc).delete(synchronize_session=False)
+        db.query(TagAssignmentHistory).filter(TagAssignmentHistory.epc == clean_epc).delete(synchronize_session=False)
+        db.query(Inventory).filter(Inventory.epc == clean_epc).delete(synchronize_session=False)
+        db.query(WMSInventory).filter(WMSInventory.epc == clean_epc).delete(synchronize_session=False)
+        db.query(RFIDTag).filter(RFIDTag.epc == clean_epc).delete(synchronize_session=False)
+        db.commit()
+
+        if settings.DATABASE_URL.startswith("sqlite"):
+            db.execute(text("PRAGMA foreign_keys = ON;"))
+            db.commit()
+
+        return {"success": True, "epc": clean_epc, "message": f"Tag {clean_epc} deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        if settings.DATABASE_URL.startswith("sqlite"):
+            try:
+                db.execute(text("PRAGMA foreign_keys = ON;"))
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"Failed to delete tag {clean_epc}: {str(e)}")
 
 @router.get("/rfid-tags/{epc}/history", response_model=List[TagHistoryResponse])
 def get_tag_history(epc: str, db: Session = Depends(get_db)):

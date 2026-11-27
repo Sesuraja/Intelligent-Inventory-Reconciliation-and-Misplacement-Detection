@@ -128,21 +128,37 @@ export const AIModelInsightsView: React.FC = () => {
             <div className="grid grid-cols-3 gap-2.5 text-center mb-4">
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
                 <span className="text-[10px] text-slate-400 block font-semibold">Precision</span>
-                <strong className="text-slate-900 font-mono text-sm font-bold block">0.938</strong>
-                <span className="text-[9px] text-slate-500 font-mono block">95% CI [0.912, 0.958]</span>
-                <span className="text-[8px] text-slate-400 block">n = 450</span>
+                <strong className="text-slate-900 font-mono text-sm font-bold block">
+                  {evalData?.precision !== undefined ? Number(evalData.precision).toFixed(3) : (loading ? '...' : 'N/A')}
+                </strong>
+                <span className="text-[9px] text-slate-500 font-mono block">
+                  {evalData?.precision_ci ? `95% CI [${evalData.precision_ci.join(', ')}]` : 'Live Evaluation'}
+                </span>
+                <span className="text-[8px] text-slate-400 block">
+                  {evalData?.sample_size ? `n = ${evalData.sample_size}` : 'Live Dataset'}
+                </span>
               </div>
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
                 <span className="text-[10px] text-slate-400 block font-semibold">Recall</span>
-                <strong className="text-slate-900 font-mono text-sm font-bold block">0.946</strong>
-                <span className="text-[9px] text-slate-500 font-mono block">95% CI [0.921, 0.965]</span>
-                <span className="text-[8px] text-slate-400 block">n = 450</span>
+                <strong className="text-slate-900 font-mono text-sm font-bold block">
+                  {evalData?.recall !== undefined ? Number(evalData.recall).toFixed(3) : (loading ? '...' : 'N/A')}
+                </strong>
+                <span className="text-[9px] text-slate-500 font-mono block">
+                  {evalData?.recall_ci ? `95% CI [${evalData.recall_ci.join(', ')}]` : 'Live Evaluation'}
+                </span>
+                <span className="text-[8px] text-slate-400 block">
+                  {evalData?.sample_size ? `n = ${evalData.sample_size}` : 'Live Dataset'}
+                </span>
               </div>
               <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
                 <span className="text-[10px] text-emerald-700 block font-semibold">F1-Score</span>
-                <strong className="text-emerald-700 font-mono text-sm font-bold block">0.942</strong>
+                <strong className="text-emerald-700 font-mono text-sm font-bold block">
+                  {evalData?.f1_score !== undefined ? Number(evalData.f1_score).toFixed(3) : (loading ? '...' : 'N/A')}
+                </strong>
                 <span className="text-[9px] text-emerald-600 font-mono block">Balanced</span>
-                <span className="text-[8px] text-emerald-500 block">n = 450</span>
+                <span className="text-[8px] text-emerald-500 block">
+                  {evalData?.sample_size ? `n = ${evalData.sample_size}` : 'Live Dataset'}
+                </span>
               </div>
             </div>
 

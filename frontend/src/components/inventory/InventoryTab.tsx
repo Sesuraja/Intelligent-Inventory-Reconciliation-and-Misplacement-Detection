@@ -69,6 +69,7 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showCreateShelfModal, setShowCreateShelfModal] = useState(false);
   const [showAssignTagModal, setShowAssignTagModal] = useState(false);
+  const [assignTagInitial, setAssignTagInitial] = useState<{ epc?: string; product_id?: number; expected_shelf_id?: number } | null>(null);
   const [showCreateProductModal, setShowCreateProductModal] = useState(false);
   const [showAssignAntennaModal, setShowAssignAntennaModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
@@ -87,6 +88,16 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
       loadData();
     } catch (err: any) {
       alert(`Error deleting product: ${err.message}`);
+    }
+  };
+
+  const handleDeleteTag = async (epc: string) => {
+    if (!window.confirm(`Are you sure you want to delete RFID Tag ${epc}?`)) return;
+    try {
+      await api.deleteRFIDTag(epc);
+      loadData();
+    } catch (err: any) {
+      alert(`Error deleting tag: ${err.message}`);
     }
   };
 
@@ -117,21 +128,24 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
   const loadData = async () => {
     setLoading(true);
     try {
-      const [invData, prodData, shelfData, antData, readerData] = await Promise.all([
+      const [invRes, prodRes, shelfRes, antRes, readerRes] = await Promise.allSettled([
         api.getInventory(),
         api.getProducts(),
         api.getShelves(),
         api.getAntennas(),
         api.getReaders()
       ]);
-      setItems(invData);
-      setProducts(prodData);
-      setShelves(shelfData);
-      setAntennas(antData);
-      setReaders(readerData);
-      if (shelfData.length > 0) {
-        setTargetShelfId(shelfData[0].id);
+      if (invRes.status === 'fulfilled') setItems(invRes.value || []);
+      if (prodRes.status === 'fulfilled') setProducts(prodRes.value || []);
+      if (shelfRes.status === 'fulfilled') {
+        const shelfData = shelfRes.value || [];
+        setShelves(shelfData);
+        if (shelfData.length > 0) {
+          setTargetShelfId(shelfData[0].id);
+        }
       }
+      if (antRes.status === 'fulfilled') setAntennas(antRes.value || []);
+      if (readerRes.status === 'fulfilled') setReaders(readerRes.value || []);
     } catch (err) {
       console.error('Error loading inventory data:', err);
     } finally {
@@ -417,7 +431,10 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={() => setShowAssignTagModal(true)}
+                              onClick={() => {
+                                setAssignTagInitial({ product_id: p.id });
+                                setShowAssignTagModal(true);
+                              }}
                               className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 text-slate-600 border border-slate-200 rounded-lg text-[11px] font-semibold transition"
                             >
                               + Assign Tag
@@ -498,18 +515,19 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                     <th className="py-3 px-4">Observed Shelf</th>
                     <th className="py-3 px-4">Reconciliation Status</th>
                     <th className="py-3 px-4">Confidence</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="py-12">
+                      <td colSpan={8} className="py-12">
                         <LoadingState message="Fetching registered EPC items from database..." />
                       </td>
                     </tr>
                   ) : filteredItems.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12">
+                      <td colSpan={8} className="py-12">
                         <EmptyState
                           title="No Inventory Found"
                           description="No tracked inventory items matched your active search or shelf filters."
@@ -550,6 +568,31 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
                         </td>
                         <td className="py-3 px-4 font-mono font-semibold text-slate-800">
                           {Math.round(item.confidence * 100)}%
+                        </td>
+                        <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+                          <button
+                            onClick={() => {
+                              const prod = products.find((p) => p.sku === item.product_sku);
+                              const sh = shelves.find((s) => s.shelf_code === item.expected_shelf_code);
+                              setAssignTagInitial({
+                                epc: item.epc,
+                                product_id: prod?.id,
+                                expected_shelf_id: sh?.id
+                              });
+                              setShowAssignTagModal(true);
+                            }}
+                            className="p-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-500 rounded-lg transition cursor-pointer"
+                            title="Reassign / Edit Tag Product & Shelf"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTag(item.epc)}
+                            className="p-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-500 rounded-lg transition cursor-pointer"
+                            title="Delete RFID Tag"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -686,10 +729,14 @@ export const InventoryTab: React.FC<InventoryTabProps> = ({ subPage, onNavigateS
       {/* Assign Tag Modal */}
       <AssignTagModal
         isOpen={showAssignTagModal}
-        onClose={() => setShowAssignTagModal(false)}
+        onClose={() => {
+          setShowAssignTagModal(false);
+          setAssignTagInitial(null);
+        }}
         onSuccess={loadData}
         products={products}
         shelves={shelves}
+        initialTag={assignTagInitial}
       />
 
       {/* Edit Product Modal */}

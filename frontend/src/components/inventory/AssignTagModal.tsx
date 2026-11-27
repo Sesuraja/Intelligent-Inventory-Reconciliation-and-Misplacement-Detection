@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Tag, Check, Package, Layers, ShieldAlert } from 'lucide-react';
 import { ProductItem, ShelfItem } from '../../types';
 import { api } from '../../services/api';
@@ -9,6 +9,7 @@ interface AssignTagModalProps {
   onSuccess: () => void;
   products: ProductItem[];
   shelves: ShelfItem[];
+  initialTag?: { epc?: string; product_id?: number; expected_shelf_id?: number } | null;
 }
 
 export const AssignTagModal: React.FC<AssignTagModalProps> = ({
@@ -16,14 +17,24 @@ export const AssignTagModal: React.FC<AssignTagModalProps> = ({
   onClose,
   onSuccess,
   products,
-  shelves
+  shelves,
+  initialTag
 }) => {
   const [epc, setEpc] = useState('');
-  const [productId, setProductId] = useState<number>(products[0]?.id || 1);
-  const [shelfId, setShelfId] = useState<number>(shelves[0]?.id || 1);
+  const [productId, setProductId] = useState<number>(products[0]?.id || 0);
+  const [shelfId, setShelfId] = useState<number>(shelves[0]?.id || 0);
   const [packagingClass, setPackagingClass] = useState('CARDBOARD');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setEpc(initialTag?.epc || '');
+      setProductId(initialTag?.product_id || products[0]?.id || 0);
+      setShelfId(initialTag?.expected_shelf_id || shelves[0]?.id || 0);
+      setError(null);
+    }
+  }, [isOpen, initialTag, products, shelves]);
 
   if (!isOpen) return null;
 

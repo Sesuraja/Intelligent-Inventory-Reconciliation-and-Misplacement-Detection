@@ -122,14 +122,14 @@ export function App() {
       }
 
       // 2. Fetch auxiliary config concurrently in background
-      const [rds, ants, shs] = await Promise.all([
+      const [rdsRes, antsRes, shsRes] = await Promise.allSettled([
         api.getReaders(),
         api.getAntennas(),
         api.getShelves()
       ]);
-      setReaders(rds);
-      setAntennas(ants);
-      setShelves(shs);
+      if (rdsRes.status === 'fulfilled') setReaders(rdsRes.value || []);
+      if (antsRes.status === 'fulfilled') setAntennas(antsRes.value || []);
+      if (shsRes.status === 'fulfilled') setShelves(shsRes.value || []);
     } catch (err) {
       console.error('Error loading warehouse data:', err);
     }
@@ -137,17 +137,17 @@ export function App() {
 
   const refreshRealtimeData = async () => {
     try {
-      const [sum, ants, rds, events] = await Promise.all([
+      const [sumRes, antsRes, rdsRes, eventsRes] = await Promise.allSettled([
         api.getDashboardSummary(),
         api.getAntennas(),
         api.getReaders(),
         api.getRFIDEvents(50)
       ]);
-      setSummary(sum);
-      setAntennas(ants);
-      setReaders(rds);
-      if (events && events.length > 0) {
-        setLiveEvents(events);
+      if (sumRes.status === 'fulfilled') setSummary(sumRes.value);
+      if (antsRes.status === 'fulfilled') setAntennas(antsRes.value || []);
+      if (rdsRes.status === 'fulfilled') setReaders(rdsRes.value || []);
+      if (eventsRes.status === 'fulfilled' && eventsRes.value && eventsRes.value.length > 0) {
+        setLiveEvents(eventsRes.value);
       }
     } catch (err) {
       console.error('Error refreshing realtime data:', err);

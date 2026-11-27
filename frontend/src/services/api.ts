@@ -115,6 +115,10 @@ export const api = {
     invalidateApiCache();
     return fetchJSON<any>('/inventory/assign-tag', { method: 'POST', body: JSON.stringify(data) });
   },
+  deleteRFIDTag: (epc: string) => {
+    invalidateApiCache();
+    return fetchJSON<any>(`/rfid-tags/${encodeURIComponent(epc)}`, { method: 'DELETE' });
+  },
 
   // Movements
   getMovements: () => fetchJSON<any[]>('/movements'),
@@ -184,6 +188,12 @@ export const api = {
   // Reports
   getReconciliationReport: () => fetchJSON<any>('/reports/reconciliation'),
   getAccuracyReport: () => fetchJSON<any>('/reports/accuracy'),
+  getReaderPerformanceReport: () => fetchJSON<any>('/reports/readers'),
+
+  // Audit Sessions
+  getSessions: () => fetchJSON<any[]>('/sessions'),
+  createSession: (data: { name: string; description?: string; created_by?: string }) =>
+    fetchJSON<any>('/sessions', { method: 'POST', body: JSON.stringify(data) }),
 
   // System Mode & Hardware Verification
   getOperatingMode: () =>
@@ -216,6 +226,7 @@ export const api = {
     auto_reconcile?: boolean;
   }) => fetchJSON<any>('/handheld/verification', { method: 'POST', body: JSON.stringify(data) }),
   getHandheldScans: (limit: number = 50) => fetchJSON<any[]>(`/handheld/scans?limit=${limit}`),
+  getHandheldVerificationHistory: () => fetchJSON<any[]>('/handheld/verification/history'),
   syncHandheldBatch: (data: any) =>
     fetchJSON<any>('/handheld/sync', { method: 'POST', body: JSON.stringify(data) }),
 

@@ -154,13 +154,13 @@ export const DatedTestReportView: React.FC = () => {
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[10px] text-slate-500 font-bold uppercase">Reader Models</span>
                 <div className="font-bold text-slate-900 mt-1 truncate">
-                  {report.hardware_configuration?.reader_models?.join(', ') || 'Impinj Speedway R420'}
+                  {report.hardware_configuration?.reader_models?.join(', ') || 'Aperture UHF Fixed Gateway'}
                 </div>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className="text-[10px] text-slate-500 font-bold uppercase">Total Antennas</span>
                 <div className="font-bold text-slate-900 mt-1">
-                  {report.hardware_configuration?.antennas_count || 4} ports configured
+                  {report.hardware_configuration?.antennas_count ?? 0} ports configured
                 </div>
               </div>
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">

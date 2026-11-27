@@ -16,6 +16,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
   onSuccess,
   product
 }) => {
+  const [sku, setSku] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Automotive');
   const [minStock, setMinStock] = useState('5');
@@ -26,6 +27,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
 
   useEffect(() => {
     if (product) {
+      setSku(product.sku || '');
       setName(product.name || '');
       setCategory(product.category || 'Automotive');
       setMinStock(product.min_stock !== undefined ? String(product.min_stock) : '5');
@@ -38,14 +40,15 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      setError('Product title is required');
+    if (!sku.trim() || !name.trim()) {
+      setError('SKU code and Product title are required');
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
       await api.updateProduct(product.id, {
+        sku: sku.trim().toUpperCase(),
         name: name.trim(),
         category: category.trim(),
         min_stock: parseInt(minStock) || 5,
@@ -90,6 +93,17 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
               {error}
             </div>
           )}
+
+          <div>
+            <label className="block font-semibold text-slate-700 mb-1">Master SKU Code</label>
+            <input
+              type="text"
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition"
+              required
+            />
+          </div>
 
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Product Title</label>

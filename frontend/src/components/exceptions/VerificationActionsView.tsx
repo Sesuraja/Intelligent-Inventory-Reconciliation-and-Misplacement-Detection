@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -32,6 +32,22 @@ export const VerificationActionsView: React.FC<VerificationActionsViewProps> = (
   const { settings } = useAppSettings();
   const [resolving, setResolving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [verificationLogs, setVerificationLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!selectedException) {
+      setVerificationLogs([]);
+      return;
+    }
+    api.getHandheldVerificationHistory()
+      .then((logs) => {
+        const filtered = (logs || []).filter(
+          (l: any) => l.epc === selectedException.epc || l.discrepancy_id === selectedException.id
+        );
+        setVerificationLogs(filtered);
+      })
+      .catch(() => setVerificationLogs([]));
+  }, [selectedException?.id, selectedException?.epc]);
 
   if (!selectedException) {
     return (
@@ -160,35 +176,34 @@ export const VerificationActionsView: React.FC<VerificationActionsViewProps> = (
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700 font-mono">
-                <tr className="hover:bg-slate-50/50">
-                  <td className="py-2.5 px-4 font-sans font-semibold text-indigo-700 flex items-center space-x-1.5">
-                    <Smartphone className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Handheld Scan</span>
-                  </td>
-                  <td className="py-2.5 px-4 font-bold text-slate-900">{selectedException.observed_shelf_code || selectedException.expected_shelf_code}</td>
-                  <td className="py-2.5 px-4 font-sans">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Confirmed
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-4 font-sans text-slate-600">Marcus Vance (HH-01)</td>
-                  <td className="py-2.5 px-4 font-sans text-right text-slate-500 text-[11px]">10:42 AM</td>
-                </tr>
-
-                <tr className="hover:bg-slate-50/50">
-                  <td className="py-2.5 px-4 font-sans font-semibold text-blue-700 flex items-center space-x-1.5">
-                    <Clock className="w-3.5 h-3.5 text-blue-600" />
-                    <span>System (AI Engine)</span>
-                  </td>
-                  <td className="py-2.5 px-4 font-bold text-slate-900">{selectedException.observed_shelf_code || selectedException.expected_shelf_code}</td>
-                  <td className="py-2.5 px-4 font-sans">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                      Predicted
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-4 font-sans text-slate-600">Aperture UHF Fixed Gateway</td>
-                  <td className="py-2.5 px-4 font-sans text-right text-slate-500 text-[11px]">10:30 AM</td>
-                </tr>
+                {verificationLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-6 px-4 text-center font-sans text-slate-400">
+                      No handheld or supervisor verification logs recorded for {selectedException.epc} yet. Use the buttons above or Handheld Verification to log a verification.
+                    </td>
+                  </tr>
+                ) : (
+                  verificationLogs.map((log: any, idx: number) => (
+                    <tr key={log.id || idx} className="hover:bg-slate-50/50">
+                      <td className="py-2.5 px-4 font-sans font-semibold text-indigo-700 flex items-center space-x-1.5">
+                        <Smartphone className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>{log.device_code ? 'Handheld Scan' : 'System Verification'}</span>
+                      </td>
+                      <td className="py-2.5 px-4 font-bold text-slate-900">{log.actual_shelf_code || selectedException.observed_shelf_code || 'N/A'}</td>
+                      <td className="py-2.5 px-4 font-sans">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {log.verification_status || 'VERIFIED'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-4 font-sans text-slate-600">
+                        {log.verified_by || 'Operator'}{log.device_code ? ` (${log.device_code})` : ''}
+                      </td>
+                      <td className="py-2.5 px-4 font-sans text-right text-slate-500 text-[11px]">
+                        {log.verified_at ? new Date(log.verified_at).toLocaleString() : '—'}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

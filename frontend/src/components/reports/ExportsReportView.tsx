@@ -15,11 +15,7 @@ export const ExportsReportView: React.FC = () => {
   const [reportType, setReportType] = useState('inventory-reconciliation');
   const [format, setFormat] = useState<'CSV' | 'XLSX' | 'PDF' | 'JSON'>('CSV');
   const [downloading, setDownloading] = useState(false);
-  const [recentExports, setRecentExports] = useState([
-    { name: 'Reconciliation_Audit_20261119.csv', type: 'CSV', date: 'Today, 10:14 AM', size: '248 KB' },
-    { name: 'AI_Discrepancies_Weekly_Report.xlsx', type: 'XLSX', date: 'Yesterday, 18:30 PM', size: '1.2 MB' },
-    { name: 'LLRP_Raw_Telemetry_Stream.json', type: 'JSON', date: 'Nov 18, 2026', size: '4.8 MB' },
-  ]);
+  const [recentExports, setRecentExports] = useState<Array<{ name: string; type: string; date: string; size: string }>>([]);
 
   const handleExport = () => {
     setDownloading(true);
